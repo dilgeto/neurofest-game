@@ -1,0 +1,16 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(g++ -std=c++17 -Iinclude -c src/main.cpp src/menu.cpp src/button.cpp -o /dev/null)",
+      "Bash(g++ -std=c++17 -Iinclude -c src/main.cpp -o /tmp/nfg_build/main.o)",
+      "Bash(g++ -std=c++17 -Iinclude -c src/menu.cpp -o /tmp/nfg_build/menu.o)",
+      "Bash(g++ -std=c++17 -Iinclude -c src/button.cpp -o /tmp/nfg_build/button.o)",
+      "Bash(pkg-config --exists raylib)",
+      "Bash(ldconfig -p)",
+      "Bash(pkg-config --cflags --libs raylib)",
+      "Bash(ls /home/dilget/Tesis/wann-cpp/../snn-simulator 2>/dev/null && find /home/dilget/Tesis/snn-simulator/include -name \"*.hpp\" | head -40)",
+      "Read(//home/dilget/Tesis/snn-simulator/**)",
+      "Bash(cmake -S . -B build)"
+    ]
+  }
+}
