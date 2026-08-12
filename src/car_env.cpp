@@ -2,12 +2,13 @@
 
 #include <algorithm>
 #include <cmath>
+#include <string>
 
 namespace {
     // rl-tools' hardcoded default_track (rl_tools/rl/environments/car/track.h), a 100x100
     // grid at 50mm/px ('#' = on track, '.' = off track). Extracted verbatim.
     constexpr int TRACK_SIZE = CarEnv::TRACK_SIZE;
-    const char* const TRACK_ROWS[TRACK_SIZE] = {
+    constexpr const char* TRACK_ROWS[TRACK_SIZE] = {
         "....................................................................................................",
         "....................................................................................................",
         "....................................................................................................",
@@ -107,7 +108,20 @@ namespace {
         "....................................................................................................",
         "....................................................................................................",
         "....................................................................................................",
+        "....................................................................................................",
     };
+
+    // Guards against silently losing/duplicating a row when this array is hand-edited: a
+    // missing initializer zero-fills the rest of the array with null pointers instead of
+    // erroring, which previously crashed ensureTrackTexture() on the first draw call.
+    constexpr bool trackRowsValid() {
+        for (const char* row : TRACK_ROWS) {
+            if (row == nullptr) return false;
+            if (std::char_traits<char>::length(row) != static_cast<size_t>(TRACK_SIZE)) return false;
+        }
+        return true;
+    }
+    static_assert(trackRowsValid(), "TRACK_ROWS must have TRACK_SIZE rows of exactly TRACK_SIZE characters each");
 
     // Bicycle model parameters (rl_tools::rl::environments::car::Parameters<T> defaults).
     constexpr double G = 9.81;
@@ -191,7 +205,7 @@ void CarEnv::step(double throttleBrake, double steering, std::mt19937& rng) {
     ++stepCount_;
 
     bool terminated = !onTrack(x_, y_);
-    if (terminated || stepCount_ >= EPISODE_STEP_LIMIT) reset(rng);
+    if (terminated) reset(rng);
 }
 
 void CarEnv::ensureTrackTexture() const {
@@ -208,7 +222,7 @@ void CarEnv::ensureTrackTexture() const {
     trackTextureReady_ = true;
 }
 
-void CarEnv::draw(Rectangle bounds) const {
+void CarEnv::drawTrack(Rectangle bounds) const {
     ensureTrackTexture();
 
     float scale = std::min(bounds.width, bounds.height) / static_cast<float>(2.0 * BOUND);
@@ -219,27 +233,35 @@ void CarEnv::draw(Rectangle bounds) const {
     };
     DrawTexturePro(trackTexture_, { 0, 0, static_cast<float>(TRACK_SIZE), static_cast<float>(TRACK_SIZE) },
         dest, { 0, 0 }, 0.0f, WHITE);
+}
 
+void CarEnv::drawCar(Rectangle bounds, Color carColor, bool showLidar) const {
+    float scale = std::min(bounds.width, bounds.height) / static_cast<float>(2.0 * BOUND);
+    Vector2 origin = { bounds.x + bounds.width / 2.0f, bounds.y + bounds.height / 2.0f };
     Vector2 carScreen = { origin.x + static_cast<float>(x_) * scale, origin.y - static_cast<float>(y_) * scale };
 
-    constexpr double DEG20 = 20.0 * M_PI / 180.0;
-    double directions[3] = { -DEG20, 0.0, DEG20 };
-    for (double dir : directions) {
-        double dist = lidarDistance(dir) * (LIDAR_NUM_STEPS * LIDAR_STEP_SIZE);
-        Vector2 rayEnd = {
-            carScreen.x + static_cast<float>(dist * std::cos(mu_ + dir)) * scale,
-            carScreen.y - static_cast<float>(dist * std::sin(mu_ + dir)) * scale
-        };
-        DrawLineEx(carScreen, rayEnd, 1.5f, Fade(Color{60, 120, 220, 255}, 0.6f));
+    if (showLidar) {
+        constexpr double DEG20 = 20.0 * M_PI / 180.0;
+        double directions[3] = { -DEG20, 0.0, DEG20 };
+        for (double dir : directions) {
+            double dist = lidarDistance(dir) * (LIDAR_NUM_STEPS * LIDAR_STEP_SIZE);
+            Vector2 rayEnd = {
+                carScreen.x + static_cast<float>(dist * std::cos(mu_ + dir)) * scale,
+                carScreen.y - static_cast<float>(dist * std::sin(mu_ + dir)) * scale
+            };
+            DrawLineEx(carScreen, rayEnd, 1.5f, Fade(carColor, 0.5f));
+        }
     }
 
     Vector2 heading = {
         carScreen.x + 14.0f * static_cast<float>(std::cos(mu_)),
         carScreen.y - 14.0f * static_cast<float>(std::sin(mu_))
     };
-    DrawLineEx(carScreen, heading, 3.0f, Color{220, 90, 70, 255});
-    DrawCircleV(carScreen, 6.0f, Color{220, 90, 70, 255});
+    DrawLineEx(carScreen, heading, 3.0f, carColor);
+    DrawCircleV(carScreen, 6.0f, carColor);
+}
 
-    DrawText(TextFormat("Paso episodio: %d / %d", stepCount_, EPISODE_STEP_LIMIT),
-        static_cast<int>(bounds.x), static_cast<int>(bounds.y + bounds.height - 20), 18, DARKGRAY);
+void CarEnv::draw(Rectangle bounds, Color carColor, bool showLidar) const {
+    drawTrack(bounds);
+    drawCar(bounds, carColor, showLidar);
 }

@@ -14,7 +14,6 @@ class CarEnv {
         static constexpr int TRACK_SIZE = 100;
         static constexpr double BOUND = TRACK_SCALE * TRACK_SIZE / 2.0; // 2.5 m
         static constexpr double VX_MAX = 3.0, VY_MAX = 2.0, OMEGA_MAX = 10.0;
-        static constexpr int EPISODE_STEP_LIMIT = 1000;
 
         void reset(std::mt19937& rng);
 
@@ -22,11 +21,24 @@ class CarEnv {
         // (lidar_* already in [0,1]: fraction of the 1.25m max ray length).
         std::array<double, 9> observe() const;
 
-        // Applies (throttleBrake, steering) in [-1,1] for DT seconds. Auto-resets on
-        // leaving the track or hitting the step limit.
+        // Applies (throttleBrake, steering) in [-1,1] for DT seconds. Runs indefinitely --
+        // auto-resets only when the car leaves the track (there is no step limit).
         void step(double throttleBrake, double steering, std::mt19937& rng);
 
-        void draw(Rectangle bounds) const;
+        // Draws just the track background -- identical for every CarEnv instance. When two
+        // cars share one track, call this once (on either instance) and then drawCar() for
+        // each; drawCar() alone would have one car's opaque track redraw erase the other's
+        // marker.
+        void drawTrack(Rectangle bounds) const;
+
+        // Draws just this car's marker (+ heading line, + lidar rays if `showLidar`), no
+        // track background. `carColor` also tints the lidar rays.
+        void drawCar(Rectangle bounds, Color carColor = Color{220, 90, 70, 255}, bool showLidar = true) const;
+
+        // Single-car convenience: drawTrack() + drawCar().
+        void draw(Rectangle bounds, Color carColor = Color{220, 90, 70, 255}, bool showLidar = true) const;
+
+        int stepCount() const { return stepCount_; }
 
     private:
         bool onTrack(double worldX, double worldY) const;

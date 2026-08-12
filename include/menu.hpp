@@ -10,6 +10,7 @@
 #define NETWORK_VIEW 3
 #define LOAD_NETWORK_TASK_MENU 4
 #define LOAD_NETWORK_FILE_MENU 5
+#define VS_AI_RACING_CAR 6
 
 using namespace std;
 
@@ -38,6 +39,8 @@ class Menu {
         Button backFromLoadTask;
         // Load network: file selection (list itself is built dynamically outside Menu)
         Button backFromLoadFile;
+        // VS AI: Racing Car (human vs AI, no network shown)
+        Button backFromVsAiRacingCar;
 
     public:
         // Methods
@@ -60,6 +63,7 @@ class Menu {
         Button getLoadRacingCarTask() {return loadRacingCarTask;}
         Button getBackFromLoadTask() {return backFromLoadTask;}
         Button getBackFromLoadFile() {return backFromLoadFile;}
+        Button getBackFromVsAiRacingCar() {return backFromVsAiRacingCar;}
         // Setters
         void setStatus(int status) {this->status = status;}
         // Drawing

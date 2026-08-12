@@ -10,7 +10,11 @@
       "Bash(pkg-config --cflags --libs raylib)",
       "Bash(ls /home/dilget/Tesis/wann-cpp/../snn-simulator 2>/dev/null && find /home/dilget/Tesis/snn-simulator/include -name \"*.hpp\" | head -40)",
       "Read(//home/dilget/Tesis/snn-simulator/**)",
-      "Bash(cmake -S . -B build)"
+      "Bash(cmake -S . -B build)",
+      "Bash(timeout 20 gdb -batch -ex run -ex bt --args __TRACKED_VAR__/car_render_test)",
+      "Bash(timeout 20 gdb -batch -ex run -ex 'print row' -ex 'print col' -ex 'print TRACK_ROWS[row]' -ex 'print TRACK_ROWS[0]' -ex 'print TRACK_ROWS' --args __TRACKED_VAR__/car_render_test)",
+      "Bash(awk '/TRACK_ROWS\\\\[TRACK_SIZE\\\\] = \\\\{/,/^    \\\\};/' src/car_env.cpp)",
+      "Bash(mkdir -p /tmp/claude-1000/-home-dilget-Projects-neurofest-game/ef9bab0a-67e1-4764-b879-54733f12e021/scratchpad)"
     ]
   }
 }

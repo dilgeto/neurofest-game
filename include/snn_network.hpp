@@ -106,6 +106,13 @@ class SnnNetwork {
 
         bool isStepFinished() const { return simClockMs >= SIM_WINDOW_MS; }
 
+        // Fraction (0..1) of the current 20ms window's playback that has elapsed --
+        // usable to interpolate an environment's rendered pose in step with the spikes.
+        double progress() const {
+            double p = simClockMs / SIM_WINDOW_MS;
+            return p < 0.0 ? 0.0 : (p > 1.0 ? 1.0 : p);
+        }
+
         void draw(Rectangle bounds) const;
 
         int nodeCount() const { return static_cast<int>(nodes.size()); }

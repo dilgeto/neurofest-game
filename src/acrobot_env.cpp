@@ -17,12 +17,6 @@ namespace {
     constexpr double MAX_TORQUE = 1.0;
     constexpr double GRAVITY = 9.8;
 
-    double angleNormalize(double x) {
-        double twoPi = 2.0 * M_PI;
-        double a = x + M_PI;
-        return (a - twoPi * std::floor(a / twoPi)) - M_PI;
-    }
-
     void dsdt(const double state[4], double action, double dState[4]) {
         double theta1 = state[0];
         double theta2 = state[1];
@@ -63,6 +57,12 @@ namespace {
         dsdt(y3, action, k4);
         for (int i = 0; i < 4; ++i) nextState[i] = state[i] + dt / 6.0 * (k1[i] + 2.0 * k2[i] + 2.0 * k3[i] + k4[i]);
     }
+
+    void drawDashedLineH(float xStart, float xEnd, float y, float dash, float gap, float thickness, Color color) {
+        for (float x = xStart; x < xEnd; x += dash + gap) {
+            DrawLineEx({x, y}, {std::min(x + dash, xEnd), y}, thickness, color);
+        }
+    }
 }
 
 void AcrobotEnv::reset(std::mt19937& rng) {
@@ -72,6 +72,10 @@ void AcrobotEnv::reset(std::mt19937& rng) {
     dtheta1_ = dist(rng);
     dtheta2_ = dist(rng);
     stepCount_ = 0;
+    // No prior trajectory to animate from -- collapse all three interpolation keyframes
+    // onto the fresh pose so poseAt() doesn't slide in from wherever the last episode ended.
+    startTheta1_ = midTheta1_ = theta1_;
+    startTheta2_ = midTheta2_ = theta2_;
 }
 
 std::array<double, 6> AcrobotEnv::observe() const {
@@ -88,12 +92,23 @@ void AcrobotEnv::step(double action, std::mt19937& rng) {
     // symmetric ±1 range wann-cpp uses, that rescale is the identity.
     double actionScaled = (actionClamped + 1.0) / 2.0 * (MAX_TORQUE - MIN_TORQUE) + MIN_TORQUE;
 
-    double state[4] = {theta1_, theta2_, dtheta1_, dtheta2_};
-    double next[4];
-    rk4(state, actionScaled, DT, next);
+    startTheta1_ = theta1_;
+    startTheta2_ = theta2_;
 
-    theta1_ = angleNormalize(next[0]);
-    theta2_ = angleNormalize(next[1]);
+    // Integrate as two DT/2 RK4 sub-steps (mathematically ~equivalent to one DT step, and
+    // if anything slightly more accurate) so the true computed midpoint pose is available
+    // for poseAt() -- an actual extra calculated frame, not just a geometric lerp.
+    double state[4] = {theta1_, theta2_, dtheta1_, dtheta2_};
+    double half[4];
+    rk4(state, actionScaled, DT / 2.0, half);
+    midTheta1_ = half[0];
+    midTheta2_ = half[1];
+
+    double next[4];
+    rk4(half, actionScaled, DT / 2.0, next);
+
+    theta1_ = next[0];
+    theta2_ = next[1];
     dtheta1_ = std::clamp(next[2], -MAX_VEL_1, MAX_VEL_1);
     dtheta2_ = std::clamp(next[3], -MAX_VEL_2, MAX_VEL_2);
     ++stepCount_;
@@ -104,16 +119,40 @@ void AcrobotEnv::step(double action, std::mt19937& rng) {
     }
 }
 
-void AcrobotEnv::draw(Rectangle bounds) const {
+void AcrobotEnv::poseAt(double t, double& theta1, double& theta2) const {
+    t = std::clamp(t, 0.0, 1.0);
+    if (t <= 0.5) {
+        double localT = t / 0.5;
+        theta1 = startTheta1_ + localT * (midTheta1_ - startTheta1_);
+        theta2 = startTheta2_ + localT * (midTheta2_ - startTheta2_);
+    } else {
+        double localT = (t - 0.5) / 0.5;
+        theta1 = midTheta1_ + localT * (theta1_ - midTheta1_);
+        theta2 = midTheta2_ + localT * (theta2_ - midTheta2_);
+    }
+}
+
+void AcrobotEnv::draw(Rectangle bounds, double t) const {
+    double theta1, theta2;
+    poseAt(t, theta1, theta2);
+
     Vector2 pivot = { bounds.x + bounds.width / 2.0f, bounds.y + bounds.height * 0.32f };
     float scale = std::min(bounds.width, bounds.height) / 5.0f; // pixels per meter
 
-    double mathX1 = LINK_LENGTH_1 * std::sin(theta1_);
-    double mathY1 = -LINK_LENGTH_1 * std::cos(theta1_);
+    // Target height: the episode ends once the tip's math-space height, mathY2, exceeds
+    // 1.0 (one link length above the pivot) -- see the `terminated` check below, which is
+    // exactly -cos(theta1)-cos(theta1+theta2) == mathY2 for LINK_LENGTH_1=LINK_LENGTH_2=1.
+    float targetY = pivot.y - scale;
+    Color targetColor = Fade(DARKGRAY, 0.55f);
+    drawDashedLineH(bounds.x, bounds.x + bounds.width, targetY, 10.0f, 6.0f, 2.0f, targetColor);
+    DrawText("Altura objetivo", static_cast<int>(bounds.x), static_cast<int>(targetY) - 22, 16, targetColor);
+
+    double mathX1 = LINK_LENGTH_1 * std::sin(theta1);
+    double mathY1 = -LINK_LENGTH_1 * std::cos(theta1);
     Vector2 p1 = { pivot.x + static_cast<float>(mathX1) * scale, pivot.y - static_cast<float>(mathY1) * scale };
 
-    double mathX2 = mathX1 + LINK_LENGTH_2 * std::sin(theta1_ + theta2_);
-    double mathY2 = mathY1 - LINK_LENGTH_2 * std::cos(theta1_ + theta2_);
+    double mathX2 = mathX1 + LINK_LENGTH_2 * std::sin(theta1 + theta2);
+    double mathY2 = mathY1 - LINK_LENGTH_2 * std::cos(theta1 + theta2);
     Vector2 p2 = { pivot.x + static_cast<float>(mathX2) * scale, pivot.y - static_cast<float>(mathY2) * scale };
 
     DrawLineEx(pivot, p1, 6.0f, Color{60, 110, 220, 255});

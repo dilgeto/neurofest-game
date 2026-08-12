@@ -1,7 +1,6 @@
 #include <raylib.h>
 #include <algorithm>
 #include <array>
-#include <cmath>
 #include <random>
 #include <string>
 #include <vector>
@@ -17,12 +16,21 @@
 #define SCREEN_WIDTH 1680
 #define SCREEN_HEIGHT 900
 
-// SNN viewer playback speed: sim-milliseconds simulated per wall-clock millisecond.
-// NORMAL matches the real 0.2s-per-env-step timing (20 sim-ms / 200 wall-ms);
-// SLOW stretches the same window over 20x more wall-clock time so individual spike
-// hops are easy to follow.
-static constexpr double SNN_SPEED_NORMAL = 20.0 / 200.0;
-static constexpr double SNN_SPEED_SLOW = 20.0 / 4000.0;
+// "Lenta" stretches real time by this factor so individual spike hops are easy to follow.
+static constexpr double SNN_SLOWDOWN_FACTOR = 20.0;
+
+// Wall-clock duration of one real env step, per task -- what "Real" speed maps the 20ms
+// SNN decision window to. Acrobot and Racing Car have an exact physical DT (ported
+// straight from rl-tools' environment parameters); Mountain Car's rl-tools step is
+// dimensionless (no physical DT), so it falls back to this project's own real-time
+// playback convention for it (wann-cpp/replay_mountain_car.py defaults to --fps 30).
+static double realStepMsForTask(int taskCategory) {
+	switch (taskCategory) {
+		case 0: return 200.0;           // Acrobot: DT = 0.2 s (acrobot_env.hpp)
+		case 2: return 10.0;            // Racing Car: DT = 0.01 s (car_env.hpp)
+		default: return 1000.0 / 30.0;  // Mountain Car: 30 fps convention
+	}
+}
 
 // Lays out one button per model entry in a vertical, centered stack.
 static std::vector<Button> buildModelButtons(const std::vector<SnnModelEntry>& entries) {
@@ -81,6 +89,10 @@ int main() {
 		networkPanelBounds.x + networkPanelBounds.width + 40, 120,
 		networkPanelBounds.width, SCREEN_HEIGHT - 200
 	};
+	// VS AI (Racing Car): no network shown, so the track gets the full width.
+	const Rectangle racePanelBounds = { 80, 120, SCREEN_WIDTH - 160.0f, SCREEN_HEIGHT - 200.0f };
+	const Color HUMAN_CAR_COLOR = Color{220, 60, 60, 255};
+	const Color AI_CAR_COLOR = Color{60, 110, 220, 255};
 
 	SnnNetwork snnNetwork;
 	bool snnSlowMode = false;
@@ -103,6 +115,17 @@ int main() {
 	double pendingThrottle = 0.0;        // Racing Car
 	double pendingSteering = 0.0;        // Racing Car
 
+	// VS AI: Racing Car -- human (red, keyboard) races an AI (blue, same closed loop as
+	// above) on the same track. The network is never drawn here, but the AI still needs
+	// its own SnnNetwork instance to decide -- kept separate from `snnNetwork` above so
+	// the two modes never interfere with each other.
+	SnnNetwork raceAiNetwork;
+	CarEnv humanCarEnv;
+	CarEnv aiCarEnv;
+	double raceAiThrottle = 0.0;
+	double raceAiSteering = 0.0;
+	double racePhysicsAccumulatorMs = 0.0;
+
 	while (!WindowShouldClose() && !quitRequested) {
 		// Mouse position
 		Vector2 mousePosition = GetMousePosition();
@@ -124,7 +147,17 @@ int main() {
 				} else if (menu.getSelectMountainCar().isClicked(mousePosition)) {
 					// TODO: iniciar partida contra la IA - tarea Mountain Car
 				} else if (menu.getSelectRacingCar().isClicked(mousePosition)) {
-					// TODO: iniciar partida contra la IA - tarea Racing Car
+					std::vector<SnnModelEntry> raceModels = listSnnModels("models/racing_car");
+					if (!raceModels.empty() &&
+						raceAiNetwork.load(raceModels[0].outPath, raceModels[0].wiPath, snnRacingCarPreset(), {0, 0, 100, 100})) {
+						humanCarEnv.reset(rng);
+						aiCarEnv.reset(rng);
+						raceAiNetwork.simulateStep(encodeCarObservation(aiCarEnv.observe()));
+						raceAiThrottle = decodeCarContinuousAction(raceAiNetwork, 0);
+						raceAiSteering = decodeCarContinuousAction(raceAiNetwork, 1);
+						racePhysicsAccumulatorMs = 0.0;
+						menu.setStatus(VS_AI_RACING_CAR);
+					}
 				} else if (menu.getBackFromVsAI().isClicked(mousePosition)) {
 					menu.setStatus(MAIN_MENU);
 				}
@@ -223,10 +256,72 @@ int main() {
 						snnNetwork.simulateStep(observation);
 					}
 				} else {
-					double speed = snnSlowMode ? SNN_SPEED_SLOW : SNN_SPEED_NORMAL;
+					double realStepMs = realStepMsForTask(loadedTaskCategory);
+					if (snnSlowMode) realStepMs *= SNN_SLOWDOWN_FACTOR;
+					double speed = SnnNetwork::SIM_WINDOW_MS / realStepMs;
 					snnNetwork.advance(GetFrameTime() * 1000.0 * speed);
 				}
 				break;
+
+			case VS_AI_RACING_CAR: {
+				if (menu.getBackFromVsAiRacingCar().isClicked(mousePosition)) {
+					menu.setStatus(VS_AI_MENU);
+					break;
+				}
+
+				double humanThrottle = 0.0;
+				double humanSteering = 0.0;
+
+				// Gamepad (analog): left stick steers, triggers accelerate/brake. Raylib
+				// reports GAMEPAD_AXIS_LEFT_X as -1 (left) .. +1 (right) and the trigger
+				// axes as -1 (released) .. +1 (fully pressed); if the trigger direction
+				// feels backwards on a given controller/driver, flip the (+1)/2 sign below.
+				if (IsGamepadAvailable(0)) {
+					constexpr float STICK_DEADZONE = 0.12f;
+					float stickX = GetGamepadAxisMovement(0, GAMEPAD_AXIS_LEFT_X);
+					if (stickX < -STICK_DEADZONE || stickX > STICK_DEADZONE) {
+						humanSteering = -static_cast<double>(stickX); // stick left(-) -> steer +1 (turn left)
+					}
+
+					float rightTrigger = GetGamepadAxisMovement(0, GAMEPAD_AXIS_RIGHT_TRIGGER); // accelerate
+					float leftTrigger = GetGamepadAxisMovement(0, GAMEPAD_AXIS_LEFT_TRIGGER);    // brake/reverse
+					double accel = std::clamp((static_cast<double>(rightTrigger) + 1.0) / 2.0, 0.0, 1.0);
+					double brake = std::clamp((static_cast<double>(leftTrigger) + 1.0) / 2.0, 0.0, 1.0);
+					humanThrottle = accel - brake;
+				}
+
+				// Keyboard (digital): overrides the gamepad whenever a relevant key is
+				// actually held, so both input methods keep working interchangeably.
+				if (IsKeyDown(KEY_UP)) humanThrottle = 1.0;
+				else if (IsKeyDown(KEY_DOWN)) humanThrottle = -1.0;
+				// Positive steering increases mu (a CCW/left turn on screen) -- see
+				// car_env.cpp's bicycle model, verified empirically.
+				if (IsKeyDown(KEY_LEFT)) humanSteering = 1.0;
+				else if (IsKeyDown(KEY_RIGHT)) humanSteering = -1.0;
+
+				humanThrottle = std::clamp(humanThrottle, -1.0, 1.0);
+				humanSteering = std::clamp(humanSteering, -1.0, 1.0);
+
+				// Both cars run on the same fixed-rate physics clock (CarEnv::DT = 0.01s,
+				// matching the AI's real decision cadence -- one AI decision per physics
+				// tick, exactly like SnnCarTask.cpp's training/eval loop). The network
+				// isn't shown, so there's no reason to spread it over wall-clock time the
+				// way NETWORK_VIEW does -- just run it to completion every tick.
+				const double physicsDtMs = CarEnv::DT * 1000.0;
+				racePhysicsAccumulatorMs += GetFrameTime() * 1000.0;
+				racePhysicsAccumulatorMs = std::min(racePhysicsAccumulatorMs, physicsDtMs * 10.0);
+				while (racePhysicsAccumulatorMs >= physicsDtMs) {
+					humanCarEnv.step(humanThrottle, humanSteering, rng);
+
+					aiCarEnv.step(raceAiThrottle, raceAiSteering, rng);
+					raceAiNetwork.simulateStep(encodeCarObservation(aiCarEnv.observe()));
+					raceAiThrottle = decodeCarContinuousAction(raceAiNetwork, 0);
+					raceAiSteering = decodeCarContinuousAction(raceAiNetwork, 1);
+
+					racePhysicsAccumulatorMs -= physicsDtMs;
+				}
+				break;
+			}
 		}
 
 		// Drawing
@@ -237,7 +332,7 @@ int main() {
 			DrawText("Red neuronal", static_cast<int>(networkPanelBounds.x), 95, 20, DARKGRAY);
 
 			if (loadedTaskCategory == 0) {
-				acrobotEnv.draw(envPanelBounds);
+				acrobotEnv.draw(envPanelBounds, snnNetwork.progress());
 				DrawText("Entorno: Acrobot", static_cast<int>(envPanelBounds.x), 95, 20, DARKGRAY);
 			} else if (loadedTaskCategory == 1) {
 				mountainCarEnv.draw(envPanelBounds);
@@ -245,6 +340,8 @@ int main() {
 			} else if (loadedTaskCategory == 2) {
 				carEnv.draw(envPanelBounds);
 				DrawText("Entorno: Racing Car", static_cast<int>(envPanelBounds.x), 95, 20, DARKGRAY);
+				DrawText(TextFormat("Pasos: %d", carEnv.stepCount()),
+					static_cast<int>(envPanelBounds.x), static_cast<int>(envPanelBounds.y + envPanelBounds.height - 20), 18, DARKGRAY);
 			} else {
 				const char* placeholder = "Entorno aun no implementado para esta tarea";
 				int placeholderWidth = MeasureText(placeholder, 20);
@@ -256,8 +353,17 @@ int main() {
 			float dividerX = networkPanelBounds.x + networkPanelBounds.width + 20;
 			DrawLineEx({ dividerX, networkPanelBounds.y }, { dividerX, networkPanelBounds.y + networkPanelBounds.height }, 1.0f, LIGHTGRAY);
 
-			DrawText(snnSlowMode ? "Velocidad: Lenta (ESPACIO para normal)" : "Velocidad: Normal (ESPACIO para lenta)",
+			DrawText(snnSlowMode ? "Velocidad: Lenta (ESPACIO para tiempo real)" : "Velocidad: Tiempo real (ESPACIO para lenta)",
 				20, 70, 20, DARKGRAY);
+		} else if (menu.getStatus() == VS_AI_RACING_CAR) {
+			aiCarEnv.drawTrack(racePanelBounds);
+			humanCarEnv.drawCar(racePanelBounds, HUMAN_CAR_COLOR, false);
+			aiCarEnv.drawCar(racePanelBounds, AI_CAR_COLOR, true);
+
+			DrawText("Tú (rojo) vs IA (azul)", static_cast<int>(racePanelBounds.x), 90, 22, DARKGRAY);
+			DrawText("Flechas o gamepad: arriba/abajo o gatillos acelerar/frenar, izquierda/derecha o stick izquierdo girar",
+				static_cast<int>(racePanelBounds.x),
+				static_cast<int>(racePanelBounds.y + racePanelBounds.height + 8), 18, GRAY);
 		} else if (menu.getStatus() == LOAD_NETWORK_FILE_MENU) {
 			const std::string& taskLabel = snnTaskCategories()[static_cast<size_t>(selectedTaskCategory)].label;
 			std::string title = "Modelos disponibles: " + taskLabel;

@@ -42,7 +42,9 @@ Menu::Menu(float screenWitdh, float screenHeight) :
     loadRacingCarTask(stackedButton(screenWitdh, screenHeight / 2.0f, 2, 4), "Racing Car"),
     backFromLoadTask(stackedButton(screenWitdh, screenHeight / 2.0f, 3, 4), "Volver"),
     // Load network: file selection
-    backFromLoadFile({20, 20, 140, 40}, "Volver")
+    backFromLoadFile({20, 20, 140, 40}, "Volver"),
+    // VS AI: Racing Car
+    backFromVsAiRacingCar({20, 20, 140, 40}, "Volver")
     {}
 
 void Menu::draw(Vector2 mousePosition) const {
@@ -79,6 +81,10 @@ void Menu::draw(Vector2 mousePosition) const {
 
         case LOAD_NETWORK_FILE_MENU:
             backFromLoadFile.draw(mousePosition);
+            break;
+
+        case VS_AI_RACING_CAR:
+            backFromVsAiRacingCar.draw(mousePosition);
             break;
     }
 }
