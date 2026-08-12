@@ -222,7 +222,7 @@ int main() {
 				}
 				break;
 
-			case NETWORK_VIEW:
+			case NETWORK_VIEW: {
 				if (menu.getBackFromNetworkView().isClicked(mousePosition)) {
 					menu.setStatus(PLAY_NETWORK_MENU);
 					break;
@@ -230,10 +230,11 @@ int main() {
 				if (IsKeyPressed(KEY_SPACE)) {
 					snnSlowMode = !snnSlowMode;
 				}
-				if (snnNetwork.isStepFinished()) {
-					// Real closed loop: apply the action decoded from the window that just
-					// finished playing, observe the resulting state, and feed it back in
-					// for the next window (SMALL: raw values; TTFS: normalized to [0,1]).
+
+				// Real closed loop: apply the action decoded from the window that just
+				// finished playing, observe the resulting state, and feed it back in for
+				// the next window (SMALL: raw values; TTFS: normalized to [0,1]).
+				auto takeEnvStep = [&]() {
 					if (loadedTaskCategory == 0) {
 						acrobotEnv.step(pendingAction, rng);
 						std::array<double, 6> obs = acrobotEnv.observe();
@@ -255,13 +256,27 @@ int main() {
 						for (double& value : observation) value = isSmallEncoder ? signedUnit(rng) : unit(rng);
 						snnNetwork.simulateStep(observation);
 					}
-				} else {
-					double realStepMs = realStepMsForTask(loadedTaskCategory);
-					if (snnSlowMode) realStepMs *= SNN_SLOWDOWN_FACTOR;
-					double speed = SnnNetwork::SIM_WINDOW_MS / realStepMs;
-					snnNetwork.advance(GetFrameTime() * 1000.0 * speed);
+				};
+
+				double realStepMs = realStepMsForTask(loadedTaskCategory);
+				if (snnSlowMode) realStepMs *= SNN_SLOWDOWN_FACTOR;
+				double speed = SnnNetwork::SIM_WINDOW_MS / realStepMs; // sim-ms per wall-ms
+
+				// A single advance() per rendered frame (60 FPS) can't keep up with tasks
+				// whose real step rate exceeds the render rate -- Racing Car needs ~100
+				// decisions/s, same as VS AI mode's physics accumulator needs, so use the
+				// same pattern here: catch up with as many steps as elapsed wall-clock time
+				// actually calls for, capped so a stall can't spiral.
+				double remainingWallMs = std::min(GetFrameTime() * 1000.0, realStepMs * 10.0);
+				while (remainingWallMs > 1e-9) {
+					if (snnNetwork.isStepFinished()) takeEnvStep();
+					double simMsLeftInWindow = (1.0 - snnNetwork.progress()) * SnnNetwork::SIM_WINDOW_MS;
+					double wallMsThisIter = std::min(remainingWallMs, simMsLeftInWindow / speed);
+					snnNetwork.advance(wallMsThisIter * speed);
+					remainingWallMs -= wallMsThisIter;
 				}
 				break;
+			}
 
 			case VS_AI_RACING_CAR: {
 				if (menu.getBackFromVsAiRacingCar().isClicked(mousePosition)) {
