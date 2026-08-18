@@ -52,6 +52,21 @@ static std::vector<Button> buildModelButtons(const std::vector<SnnModelEntry>& e
 	return buttons;
 }
 
+// Draws a solid triangular direction arrow centered inside `bounds` (used on the square
+// izquierda/derecha buttons, which carry no text of their own).
+static void drawArrowIcon(Rectangle bounds, bool pointsRight, Color color) {
+	float cx = bounds.x + bounds.width / 2.0f;
+	float cy = bounds.y + bounds.height / 2.0f;
+	float half = std::min(bounds.width, bounds.height) * 0.28f;
+	Vector2 tip = { cx + (pointsRight ? half : -half), cy };
+	Vector2 baseNear = { cx + (pointsRight ? -half : half), cy - half };
+	Vector2 baseFar = { cx + (pointsRight ? -half : half), cy + half };
+	// DrawTriangle only fills counter-clockwise-wound triangles; mirroring tip/base for the
+	// left-pointing arrow flips the winding, so swap the argument order to compensate.
+	if (pointsRight) DrawTriangle(baseNear, baseFar, tip, color);
+	else DrawTriangle(baseFar, baseNear, tip, color);
+}
+
 // Normalizes a raw CarEnv observation into [0,1] per channel, matching
 // SnnCarTask.cpp's TTFS-path normalization exactly (position/heading/velocities scaled
 // by their bounds; the 3 lidar readings are already in [0,1]).
@@ -93,6 +108,13 @@ int main() {
 	const Rectangle racePanelBounds = { 80, 120, SCREEN_WIDTH - 160.0f, SCREEN_HEIGHT - 200.0f };
 	const Color HUMAN_CAR_COLOR = Color{220, 60, 60, 255};
 	const Color AI_CAR_COLOR = Color{60, 110, 220, 255};
+	// VS AI (Acrobot / Mountain Car): human's env on the left, AI's on the right, shorter
+	// than the racing panel to leave room for the Izquierda/Derecha buttons at the bottom.
+	const Rectangle discreteLeftPanelBounds = { 80, 120, (SCREEN_WIDTH - 160 - 40) / 2.0f, SCREEN_HEIGHT - 200 - 140.0f };
+	const Rectangle discreteRightPanelBounds = {
+		discreteLeftPanelBounds.x + discreteLeftPanelBounds.width + 40, 120,
+		discreteLeftPanelBounds.width, discreteLeftPanelBounds.height
+	};
 
 	SnnNetwork snnNetwork;
 	bool snnSlowMode = false;
@@ -126,6 +148,16 @@ int main() {
 	double raceAiSteering = 0.0;
 	double racePhysicsAccumulatorMs = 0.0;
 
+	// VS AI: Acrobot / Mountain Car -- same idea, but the human's action is discrete
+	// (izquierda/derecha on-screen buttons -> -1/+1, same range the AI's decoder produces)
+	// and each task keeps its own pair of env instances since they're unrelated worlds.
+	AcrobotEnv humanAcrobotEnv;
+	AcrobotEnv aiAcrobotEnv;
+	MountainCarEnv humanMountainCarEnv;
+	MountainCarEnv aiMountainCarEnv;
+	double raceAiAction = 0.0;
+	double raceDiscreteAccumulatorMs = 0.0;
+
 	while (!WindowShouldClose() && !quitRequested) {
 		// Mouse position
 		Vector2 mousePosition = GetMousePosition();
@@ -143,9 +175,29 @@ int main() {
 
 			case VS_AI_MENU:
 				if (menu.getSelectAcrobot().isClicked(mousePosition)) {
-					// TODO: iniciar partida contra la IA - tarea Acrobot
+					std::vector<SnnModelEntry> models = listSnnModels("models/acrobot");
+					if (!models.empty() &&
+						raceAiNetwork.load(models[0].outPath, models[0].wiPath, snnAcrobotPreset(), {0, 0, 100, 100})) {
+						humanAcrobotEnv.reset(rng);
+						aiAcrobotEnv.reset(rng);
+						std::array<double, 6> obs = aiAcrobotEnv.observe();
+						raceAiNetwork.simulateStep(std::vector<double>(obs.begin(), obs.end()));
+						raceAiAction = raceAiNetwork.decodeFirstSpikeWinner() - 1.0;
+						raceDiscreteAccumulatorMs = 0.0;
+						menu.setStatus(VS_AI_ACROBOT);
+					}
 				} else if (menu.getSelectMountainCar().isClicked(mousePosition)) {
-					// TODO: iniciar partida contra la IA - tarea Mountain Car
+					std::vector<SnnModelEntry> models = listSnnModels("models/mountain_car");
+					if (!models.empty() &&
+						raceAiNetwork.load(models[0].outPath, models[0].wiPath, snnMountainCarPreset(), {0, 0, 100, 100})) {
+						humanMountainCarEnv.reset(rng);
+						aiMountainCarEnv.reset(rng);
+						std::array<double, 2> obs = aiMountainCarEnv.observe();
+						raceAiNetwork.simulateStep(std::vector<double>(obs.begin(), obs.end()));
+						raceAiAction = raceAiNetwork.decodeFirstSpikeWinner() - 1.0;
+						raceDiscreteAccumulatorMs = 0.0;
+						menu.setStatus(VS_AI_MOUNTAIN_CAR);
+					}
 				} else if (menu.getSelectRacingCar().isClicked(mousePosition)) {
 					std::vector<SnnModelEntry> raceModels = listSnnModels("models/racing_car");
 					if (!raceModels.empty() &&
@@ -337,6 +389,58 @@ int main() {
 				}
 				break;
 			}
+
+			case VS_AI_ACROBOT: {
+				if (menu.getBackFromVsAiAcrobot().isClicked(mousePosition)) {
+					menu.setStatus(VS_AI_MENU);
+					break;
+				}
+
+				double humanAction = 0.0;
+				if (menu.getLeftActionButton().isBeingClicked(mousePosition)) humanAction = -1.0;
+				else if (menu.getRightActionButton().isBeingClicked(mousePosition)) humanAction = 1.0;
+
+				const double physicsDtMs = realStepMsForTask(0); // Acrobot: DT = 0.2s
+				raceDiscreteAccumulatorMs += GetFrameTime() * 1000.0;
+				raceDiscreteAccumulatorMs = std::min(raceDiscreteAccumulatorMs, physicsDtMs * 10.0);
+				while (raceDiscreteAccumulatorMs >= physicsDtMs) {
+					humanAcrobotEnv.step(humanAction, rng);
+
+					aiAcrobotEnv.step(raceAiAction, rng);
+					std::array<double, 6> obs = aiAcrobotEnv.observe();
+					raceAiNetwork.simulateStep(std::vector<double>(obs.begin(), obs.end()));
+					raceAiAction = raceAiNetwork.decodeFirstSpikeWinner() - 1.0;
+
+					raceDiscreteAccumulatorMs -= physicsDtMs;
+				}
+				break;
+			}
+
+			case VS_AI_MOUNTAIN_CAR: {
+				if (menu.getBackFromVsAiMountainCar().isClicked(mousePosition)) {
+					menu.setStatus(VS_AI_MENU);
+					break;
+				}
+
+				double humanAction = 0.0;
+				if (menu.getLeftActionButton().isBeingClicked(mousePosition)) humanAction = -1.0;
+				else if (menu.getRightActionButton().isBeingClicked(mousePosition)) humanAction = 1.0;
+
+				const double physicsDtMs = realStepMsForTask(1); // Mountain Car: ~30 fps convention
+				raceDiscreteAccumulatorMs += GetFrameTime() * 1000.0;
+				raceDiscreteAccumulatorMs = std::min(raceDiscreteAccumulatorMs, physicsDtMs * 10.0);
+				while (raceDiscreteAccumulatorMs >= physicsDtMs) {
+					humanMountainCarEnv.step(humanAction, rng);
+
+					aiMountainCarEnv.step(raceAiAction, rng);
+					std::array<double, 2> obs = aiMountainCarEnv.observe();
+					raceAiNetwork.simulateStep(std::vector<double>(obs.begin(), obs.end()));
+					raceAiAction = raceAiNetwork.decodeFirstSpikeWinner() - 1.0;
+
+					raceDiscreteAccumulatorMs -= physicsDtMs;
+				}
+				break;
+			}
 		}
 
 		// Drawing
@@ -379,6 +483,28 @@ int main() {
 			DrawText("Flechas o gamepad: arriba/abajo o gatillos acelerar/frenar, izquierda/derecha o stick izquierdo girar",
 				static_cast<int>(racePanelBounds.x),
 				static_cast<int>(racePanelBounds.y + racePanelBounds.height + 8), 18, GRAY);
+		} else if (menu.getStatus() == VS_AI_ACROBOT) {
+			// Same start/mid/end sub-step interpolation as "Evaluar red": animate each
+			// pendulum smoothly across the just-taken step's motion for the whole interval
+			// leading up to the next one, instead of snapping straight to the new pose.
+			double acrobotProgress = raceDiscreteAccumulatorMs / realStepMsForTask(0);
+			humanAcrobotEnv.draw(discreteLeftPanelBounds, acrobotProgress);
+			aiAcrobotEnv.draw(discreteRightPanelBounds, acrobotProgress);
+			DrawText("Tu", static_cast<int>(discreteLeftPanelBounds.x), 95, 20, DARKGRAY);
+			DrawText("IA", static_cast<int>(discreteRightPanelBounds.x), 95, 20, DARKGRAY);
+			float acrobotDividerX = discreteLeftPanelBounds.x + discreteLeftPanelBounds.width + 20;
+			DrawLineEx({ acrobotDividerX, discreteLeftPanelBounds.y }, { acrobotDividerX, discreteLeftPanelBounds.y + discreteLeftPanelBounds.height }, 1.0f, LIGHTGRAY);
+			DrawText("Manten presionado Izquierda o Derecha para aplicar torque",
+				static_cast<int>(discreteLeftPanelBounds.x), static_cast<int>(discreteLeftPanelBounds.y + discreteLeftPanelBounds.height + 12), 18, GRAY);
+		} else if (menu.getStatus() == VS_AI_MOUNTAIN_CAR) {
+			humanMountainCarEnv.draw(discreteLeftPanelBounds);
+			aiMountainCarEnv.draw(discreteRightPanelBounds);
+			DrawText("Tu", static_cast<int>(discreteLeftPanelBounds.x), 95, 20, DARKGRAY);
+			DrawText("IA", static_cast<int>(discreteRightPanelBounds.x), 95, 20, DARKGRAY);
+			float mcDividerX = discreteLeftPanelBounds.x + discreteLeftPanelBounds.width + 20;
+			DrawLineEx({ mcDividerX, discreteLeftPanelBounds.y }, { mcDividerX, discreteLeftPanelBounds.y + discreteLeftPanelBounds.height }, 1.0f, LIGHTGRAY);
+			DrawText("Manten presionado Izquierda o Derecha para empujar el auto",
+				static_cast<int>(discreteLeftPanelBounds.x), static_cast<int>(discreteLeftPanelBounds.y + discreteLeftPanelBounds.height + 12), 18, GRAY);
 		} else if (menu.getStatus() == LOAD_NETWORK_FILE_MENU) {
 			const std::string& taskLabel = snnTaskCategories()[static_cast<size_t>(selectedTaskCategory)].label;
 			std::string title = "Modelos disponibles: " + taskLabel;
@@ -393,6 +519,10 @@ int main() {
 			for (Button& button : modelButtons) button.draw(mousePosition);
 		}
 		menu.draw(mousePosition);
+		if (menu.getStatus() == VS_AI_ACROBOT || menu.getStatus() == VS_AI_MOUNTAIN_CAR) {
+			drawArrowIcon(menu.getLeftActionButton().getButton(), false, DARKGRAY);
+			drawArrowIcon(menu.getRightActionButton().getButton(), true, DARKGRAY);
+		}
 		EndDrawing();
 	}
 

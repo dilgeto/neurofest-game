@@ -11,6 +11,8 @@
 #define LOAD_NETWORK_TASK_MENU 4
 #define LOAD_NETWORK_FILE_MENU 5
 #define VS_AI_RACING_CAR 6
+#define VS_AI_ACROBOT 7
+#define VS_AI_MOUNTAIN_CAR 8
 
 using namespace std;
 
@@ -41,6 +43,11 @@ class Menu {
         Button backFromLoadFile;
         // VS AI: Racing Car (human vs AI, no network shown)
         Button backFromVsAiRacingCar;
+        // VS AI: Acrobot / Mountain Car (human vs AI, discrete left/right on-screen buttons)
+        Button backFromVsAiAcrobot;
+        Button backFromVsAiMountainCar;
+        Button leftActionButton;
+        Button rightActionButton;
 
     public:
         // Methods
@@ -64,6 +71,10 @@ class Menu {
         Button getBackFromLoadTask() {return backFromLoadTask;}
         Button getBackFromLoadFile() {return backFromLoadFile;}
         Button getBackFromVsAiRacingCar() {return backFromVsAiRacingCar;}
+        Button getBackFromVsAiAcrobot() {return backFromVsAiAcrobot;}
+        Button getBackFromVsAiMountainCar() {return backFromVsAiMountainCar;}
+        Button getLeftActionButton() {return leftActionButton;}
+        Button getRightActionButton() {return rightActionButton;}
         // Setters
         void setStatus(int status) {this->status = status;}
         // Drawing

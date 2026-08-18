@@ -44,7 +44,13 @@ Menu::Menu(float screenWitdh, float screenHeight) :
     // Load network: file selection
     backFromLoadFile({20, 20, 140, 40}, "Volver"),
     // VS AI: Racing Car
-    backFromVsAiRacingCar({20, 20, 140, 40}, "Volver")
+    backFromVsAiRacingCar({20, 20, 140, 40}, "Volver"),
+    // VS AI: Acrobot / Mountain Car
+    backFromVsAiAcrobot({20, 20, 140, 40}, "Volver"),
+    backFromVsAiMountainCar({20, 20, 140, 40}, "Volver"),
+    // Square, no text -- main.cpp draws a direction arrow on top of each instead.
+    leftActionButton({screenWitdh / 2.0f - 110.0f, screenHeight - 130.0f, 100.0f, 100.0f}, ""),
+    rightActionButton({screenWitdh / 2.0f + 10.0f, screenHeight - 130.0f, 100.0f, 100.0f}, "")
     {}
 
 void Menu::draw(Vector2 mousePosition) const {
@@ -85,6 +91,18 @@ void Menu::draw(Vector2 mousePosition) const {
 
         case VS_AI_RACING_CAR:
             backFromVsAiRacingCar.draw(mousePosition);
+            break;
+
+        case VS_AI_ACROBOT:
+            backFromVsAiAcrobot.draw(mousePosition);
+            leftActionButton.draw(mousePosition);
+            rightActionButton.draw(mousePosition);
+            break;
+
+        case VS_AI_MOUNTAIN_CAR:
+            backFromVsAiMountainCar.draw(mousePosition);
+            leftActionButton.draw(mousePosition);
+            rightActionButton.draw(mousePosition);
             break;
     }
 }
