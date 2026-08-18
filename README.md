@@ -1,4 +1,9 @@
 # Animaciones NeuroFest
+## Requerimientos
+- Raylib
+- CMake
+- Makefile
+
 ## Cómo compilar
 ```bash
 cmake -S . -B build
