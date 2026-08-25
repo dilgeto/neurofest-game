@@ -5,6 +5,8 @@
 #include <string>
 #include <vector>
 
+#include "../include/branding.hpp"
+
 // Standalone demo (separate binary from NeuroGame): shows how 4 of snn-simulator's spike
 // encoders (include/encoding/{ttfs,rate,poisson}Encoder.*) turn a single number in [0,1]
 // into a spike train. Formulas reimplemented locally (verified against those exact
@@ -215,6 +217,7 @@ int main() {
         DrawText(TextFormat("Valor a codificar: %.2f", valueSlider.value),
             static_cast<int>(valueSlider.track.x), static_cast<int>(valueSlider.track.y - 26), 20, DARKGRAY);
 
+        DrawSponsorLogos(SCREEN_WIDTH, SCREEN_HEIGHT);
         EndDrawing();
     }
 

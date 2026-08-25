@@ -336,9 +336,14 @@ double SnnNetwork::firstSpikeTimeForOutput(int outputIndex) const {
     return -1.0;
 }
 
-void SnnNetwork::draw(Rectangle bounds) const {
-    (void)bounds;
+void SnnNetwork::setIoDisplay(const std::vector<SnnIoEntry>& inputs, const std::vector<SnnIoEntry>& outputs,
+                               int highlightedOutput) {
+    ioInputs = inputs;
+    ioOutputs = outputs;
+    ioHighlightedOutput = highlightedOutput;
+}
 
+void SnnNetwork::draw(Rectangle bounds) const {
     for (const SnnSynapse& s : synapses) {
         Color base = s.excitatory ? Color{60, 200, 120, 255} : Color{220, 70, 70, 255};
         DrawLineEx(nodes[s.from].position, nodes[s.to].position, 1.5f, Fade(base, 0.25f));
@@ -374,5 +379,89 @@ void SnnNetwork::draw(Rectangle bounds) const {
         if (flash > 0.0f) DrawCircleV(nodes[i].position, radius + 4.0f, Fade(WHITE, flash * 0.5f));
         DrawCircleV(nodes[i].position, radius, base);
         DrawCircleLines(static_cast<int>(nodes[i].position.x), static_cast<int>(nodes[i].position.y), radius, Fade(BLACK, 0.4f));
+    }
+
+    constexpr int IO_FONT = 14;
+    constexpr float IO_LINE_GAP = 16.0f;
+
+    // Input readouts: anchored just left of the node(s) each semantic variable drives.
+    // The "small" encoder splits one variable into a negative/positive node pair, so the
+    // label/value sit at the midpoint between the two.
+    for (size_t k = 0; k < ioInputs.size(); ++k) {
+        Vector2 anchor;
+        if (encoder == SnnEncoderKind::Small) {
+            int negIdx = 1 + 2 * static_cast<int>(k), posIdx = negIdx + 1;
+            if (posIdx < n) anchor = Vector2Lerp(nodes[negIdx].position, nodes[posIdx].position, 0.5f);
+            else if (negIdx < n) anchor = nodes[negIdx].position;
+            else continue;
+        } else {
+            int idx = 1 + static_cast<int>(k);
+            if (idx >= n) continue;
+            anchor = nodes[idx].position;
+        }
+
+        const SnnIoEntry& entry = ioInputs[k];
+        int labelWidth = MeasureText(entry.label.c_str(), IO_FONT);
+        int valueWidth = MeasureText(entry.value.c_str(), IO_FONT);
+        int textWidth = std::max(labelWidth, valueWidth);
+        float textRight = std::max(bounds.x + textWidth, anchor.x - 18.0f);
+        DrawText(entry.label.c_str(), static_cast<int>(textRight - labelWidth), static_cast<int>(anchor.y - IO_LINE_GAP), IO_FONT, DARKGRAY);
+        DrawText(entry.value.c_str(), static_cast<int>(textRight - valueWidth), static_cast<int>(anchor.y + 2.0f), IO_FONT, BLACK);
+    }
+
+    // Output readouts: anchored just above each output node (stacked label then value); the
+    // decoder's current winner (if any) gets a highlighted ring so it's obvious which action
+    // is "leaving".
+    constexpr float OUTPUT_VALUE_OFFSET = 34.0f;
+    for (size_t o = 0; o < ioOutputs.size(); ++o) {
+        int idx = n - nOutput + static_cast<int>(o);
+        if (idx < 0 || idx >= n) continue;
+        Vector2 anchor = nodes[idx].position;
+        bool highlighted = (ioHighlightedOutput == static_cast<int>(o));
+        if (highlighted) DrawCircleLines(static_cast<int>(anchor.x), static_cast<int>(anchor.y), 20.0f, Color{240, 170, 60, 255});
+
+        const SnnIoEntry& entry = ioOutputs[o];
+        int labelWidth = MeasureText(entry.label.c_str(), IO_FONT);
+        int valueWidth = MeasureText(entry.value.c_str(), IO_FONT);
+        float valueY = anchor.y - OUTPUT_VALUE_OFFSET;
+        float labelY = std::max(bounds.y + 2.0f, valueY - IO_LINE_GAP);
+        float labelX = std::clamp(anchor.x - labelWidth / 2.0f, bounds.x, bounds.x + bounds.width - labelWidth);
+        float valueX = std::clamp(anchor.x - valueWidth / 2.0f, bounds.x, bounds.x + bounds.width - valueWidth);
+        DrawText(entry.label.c_str(), static_cast<int>(labelX), static_cast<int>(labelY), IO_FONT, DARKGRAY);
+        DrawText(entry.value.c_str(), static_cast<int>(valueX), static_cast<int>(valueY),
+                 IO_FONT, highlighted ? Color{200, 120, 20, 255} : BLACK);
+    }
+
+    // Legend: synapse color key + what each output neuron means, anchored bottom-right.
+    if (!ioOutputs.empty()) {
+        constexpr int LEGEND_FONT = 15;
+        constexpr float LINE_H = 20.0f;
+        constexpr float PAD = 10.0f;
+        constexpr float SWATCH = 16.0f;
+
+        int legendLines = 2 + static_cast<int>(ioOutputs.size());
+        float legendHeight = PAD * 2.0f + legendLines * LINE_H;
+        float legendWidth = 280.0f;
+        Rectangle legendBox = { bounds.x + bounds.width - legendWidth, bounds.y + bounds.height - legendHeight, legendWidth, legendHeight };
+        DrawRectangleRounded(legendBox, 0.1f, 6, Fade(RAYWHITE, 0.88f));
+        DrawRectangleRoundedLinesEx(legendBox, 0.1f, 6, 1.0f, Fade(GRAY, 0.6f));
+
+        float lx = legendBox.x + PAD;
+        float ly = legendBox.y + PAD;
+        DrawLineEx({ lx, ly + SWATCH / 2.0f }, { lx + SWATCH, ly + SWATCH / 2.0f }, 3.0f, Color{60, 200, 120, 255});
+        DrawText("Sinapsis excitatoria", static_cast<int>(lx + SWATCH + 8.0f), static_cast<int>(ly), LEGEND_FONT, DARKGRAY);
+        ly += LINE_H;
+        DrawLineEx({ lx, ly + SWATCH / 2.0f }, { lx + SWATCH, ly + SWATCH / 2.0f }, 3.0f, Color{220, 70, 70, 255});
+        DrawText("Sinapsis inhibitoria", static_cast<int>(lx + SWATCH + 8.0f), static_cast<int>(ly), LEGEND_FONT, DARKGRAY);
+        ly += LINE_H;
+
+        for (size_t o = 0; o < ioOutputs.size(); ++o) {
+            bool highlighted = (ioHighlightedOutput == static_cast<int>(o));
+            Color dot = highlighted ? Color{240, 170, 60, 255} : Fade(Color{240, 170, 60, 255}, 0.5f);
+            DrawCircleV({ lx + SWATCH / 2.0f, ly + SWATCH / 2.0f }, SWATCH / 2.0f, dot);
+            std::string text = "Salida " + std::to_string(o) + ": " + ioOutputs[o].label;
+            DrawText(text.c_str(), static_cast<int>(lx + SWATCH + 8.0f), static_cast<int>(ly), LEGEND_FONT, DARKGRAY);
+            ly += LINE_H;
+        }
     }
 }

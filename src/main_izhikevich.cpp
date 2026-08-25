@@ -4,14 +4,17 @@
 #include <string>
 #include <vector>
 
+#include "../include/branding.hpp"
 #include "../include/button.hpp"
 #include "../include/snn_network.hpp"
 
-// Standalone demo (separate binary from NeuroGame): animates the 6 canonical Izhikevich
-// neuron behaviors side by side under a shared, user-controlled DC current injection --
-// the same a/b/c/d parameter table used by the SNN engine (snn_network.hpp's
-// snnParamsFor()), which in turn matches snn-simulator/src/core/neuron.cpp exactly. No
-// synapses/network here: each neuron is simulated independently as `v' = 0.04v^2+5v+140-u+I`.
+// Standalone demo (separate binary from NeuroGame): starts on a small menu, then either
+// (a) "Visualizar patrones" -- animates the 6 canonical Izhikevich neuron behaviors side by
+// side under a shared, user-controlled DC current injection, the same a/b/c/d parameter
+// table used by the SNN engine (snn_network.hpp's snnParamsFor()); or (b) "Crear patron" --
+// lets the user drag a/b/c/d sliders themselves and watch a single neuron's trace update
+// live. No synapses/network here: each neuron is simulated independently as
+// `v' = 0.04v^2+5v+140-u+I` (matches snn-simulator/src/core/neuron.cpp).
 
 namespace {
     constexpr int SCREEN_WIDTH = 1680;
@@ -23,6 +26,8 @@ namespace {
     constexpr double V_THRESHOLD = 30.0;
     constexpr double PLOT_V_MIN = -90.0;
     constexpr double PLOT_V_MAX = 40.0;
+
+    enum class DemoScreen { MENU, VISUALIZE, CREATE };
 
     struct IzhikevichNeuron {
         std::string label;
@@ -48,6 +53,14 @@ namespace {
             }
             history.push_back(static_cast<float>(std::min(v, V_THRESHOLD)));
             if (history.size() > HISTORY_CAPACITY) history.pop_front();
+        }
+
+        // Restarts the neuron at rest under its *current* params -- used after dragging
+        // a/b/c/d to a combination whose trace has run off into an unhelpful state.
+        void reset() {
+            v = params.c;
+            u = params.b * params.c;
+            history.assign(HISTORY_CAPACITY, static_cast<float>(v));
         }
     };
 
@@ -113,7 +126,24 @@ int main() {
     InitWindow(SCREEN_WIDTH, SCREEN_HEIGHT, "Comportamientos de Izhikevich");
     SetTargetFPS(60);
 
-    // Bottom, horizontally-centered control bar: [Play/Pause] [Corriente slider] [Velocidad slider].
+    DemoScreen screen = DemoScreen::MENU;
+
+    // Menu: two stacked buttons choosing between the two screens below.
+    constexpr float MENU_BUTTON_WIDTH = 340.0f;
+    constexpr float MENU_BUTTON_HEIGHT = 60.0f;
+    constexpr float MENU_GAP = 24.0f;
+    Button visualizeButton({
+        SCREEN_WIDTH / 2.0f - MENU_BUTTON_WIDTH / 2.0f, SCREEN_HEIGHT / 2.0f - MENU_BUTTON_HEIGHT - MENU_GAP / 2.0f,
+        MENU_BUTTON_WIDTH, MENU_BUTTON_HEIGHT
+    }, "Visualizar patrones");
+    Button createButton({
+        SCREEN_WIDTH / 2.0f - MENU_BUTTON_WIDTH / 2.0f, SCREEN_HEIGHT / 2.0f + MENU_GAP / 2.0f,
+        MENU_BUTTON_WIDTH, MENU_BUTTON_HEIGHT
+    }, "Crear patron");
+    Button backButton({ 20, SCREEN_HEIGHT - 60.0f, 140, 40 }, "Volver");
+
+    // Bottom, horizontally-centered control bar shared by both screens:
+    // [Play/Pause] [Corriente slider] [Velocidad slider].
     constexpr float BUTTON_WIDTH = 180.0f;
     constexpr float SLIDER_WIDTH = 300.0f;
     constexpr float CONTROL_GAP = 60.0f;
@@ -128,9 +158,10 @@ int main() {
     };
     Slider speedSlider{
         { CONTROLS_LEFT + BUTTON_WIDTH + CONTROL_GAP + SLIDER_WIDTH + CONTROL_GAP, CONTROLS_TOP + 30.0f, SLIDER_WIDTH, 10.0f },
-        0.1f, 5.0f, 1.0f
+        0.1f, 5.0f, 0.1f
     };
 
+    // "Visualizar patrones": the original 6-panel gallery.
     std::vector<IzhikevichNeuron> neurons;
     neurons.emplace_back("Regular Spiking (RS)", SnnNeuronType::RegularSpiking);
     neurons.emplace_back("Fast Spiking (FS)", SnnNeuronType::FastSpiking);
@@ -148,53 +179,153 @@ int main() {
     float panelWidth = (SCREEN_WIDTH - 2.0f * MARGIN_X - (COLS - 1) * GAP) / COLS;
     float panelHeight = (GRID_BOTTOM - GRID_TOP - (ROWS - 1) * GAP) / ROWS;
 
+    // "Crear patron": a/b/c/d sliders (ranged around Izhikevich's canonical RS/FS/CH/LTS/
+    // IB/RZ table above, with margin for combinations outside those 6 presets) driving one
+    // live neuron, plotted big on the right.
+    constexpr float PARAM_PANEL_LEFT = MARGIN_X;
+    constexpr float PARAM_SLIDER_WIDTH = 380.0f;
+    constexpr float PARAM_ROW_H = 90.0f;
+    constexpr float PARAM_TOP = GRID_TOP + 60.0f;
+
+    Slider sliderA{ { PARAM_PANEL_LEFT, PARAM_TOP + 26.0f, PARAM_SLIDER_WIDTH, 10.0f }, 0.01f, 0.15f, 0.02f };
+    Slider sliderB{ { PARAM_PANEL_LEFT, PARAM_TOP + PARAM_ROW_H + 26.0f, PARAM_SLIDER_WIDTH, 10.0f }, 0.10f, 0.30f, 0.20f };
+    Slider sliderC{ { PARAM_PANEL_LEFT, PARAM_TOP + 2.0f * PARAM_ROW_H + 26.0f, PARAM_SLIDER_WIDTH, 10.0f }, -75.0f, -40.0f, -65.0f };
+    Slider sliderD{ { PARAM_PANEL_LEFT, PARAM_TOP + 3.0f * PARAM_ROW_H + 26.0f, PARAM_SLIDER_WIDTH, 10.0f }, 0.0f, 10.0f, 8.0f };
+    Button resetButton({ PARAM_PANEL_LEFT, PARAM_TOP + 4.0f * PARAM_ROW_H, 180.0f, 44.0f }, "Reiniciar");
+
+    IzhikevichNeuron customNeuron("Tu patron", SnnNeuronType::RegularSpiking);
+
+    float plotLeft = PARAM_PANEL_LEFT + PARAM_SLIDER_WIDTH + 60.0f;
+    Rectangle plotBounds = { plotLeft, GRID_TOP, SCREEN_WIDTH - MARGIN_X - plotLeft, GRID_BOTTOM - GRID_TOP };
+
     bool running = false;
     double accumulatorMs = 0.0;
 
     while (!WindowShouldClose()) {
         Vector2 mouse = GetMousePosition();
 
-        if (playPauseButton.isClicked(mouse)) {
-            running = !running;
-            playPauseButton.setText(running ? "Pausar" : "Reanudar");
-        }
-        currentSlider.update(mouse);
-        speedSlider.update(mouse);
+        switch (screen) {
+            case DemoScreen::MENU:
+                if (visualizeButton.isClicked(mouse)) screen = DemoScreen::VISUALIZE;
+                else if (createButton.isClicked(mouse)) screen = DemoScreen::CREATE;
+                break;
 
-        if (running) {
-            // "Velocidad" scales how much simulated time each real-world frame covers,
-            // independent of the fixed SIM_DT_MS integration step (so the Izhikevich math
-            // itself doesn't change, only how fast we play it back).
-            accumulatorMs += GetFrameTime() * 1000.0 * speedSlider.value;
-            accumulatorMs = std::min(accumulatorMs, SIM_DT_MS * 400.0); // cap catch-up on a stall
-            while (accumulatorMs >= SIM_DT_MS) {
-                for (IzhikevichNeuron& neuron : neurons) neuron.step(currentSlider.value);
-                accumulatorMs -= SIM_DT_MS;
+            case DemoScreen::VISUALIZE:
+            case DemoScreen::CREATE: {
+                if (backButton.isClicked(mouse)) {
+                    screen = DemoScreen::MENU;
+                    break;
+                }
+
+                if (playPauseButton.isClicked(mouse)) {
+                    running = !running;
+                    playPauseButton.setText(running ? "Pausar" : "Reanudar");
+                }
+                currentSlider.update(mouse);
+                speedSlider.update(mouse);
+
+                if (screen == DemoScreen::CREATE) {
+                    sliderA.update(mouse);
+                    sliderB.update(mouse);
+                    sliderC.update(mouse);
+                    sliderD.update(mouse);
+                    // Applied every frame so dragging any slider updates the live trace
+                    // immediately -- v/u themselves are left alone, only the equations'
+                    // coefficients change, exactly like turning a knob on a running circuit.
+                    customNeuron.params.a = sliderA.value;
+                    customNeuron.params.b = sliderB.value;
+                    customNeuron.params.c = sliderC.value;
+                    customNeuron.params.d = sliderD.value;
+                    if (resetButton.isClicked(mouse)) customNeuron.reset();
+                }
+
+                if (running) {
+                    // "Velocidad" scales how much simulated time each real-world frame
+                    // covers, independent of the fixed SIM_DT_MS integration step (so the
+                    // Izhikevich math itself doesn't change, only how fast we play it back).
+                    accumulatorMs += GetFrameTime() * 1000.0 * speedSlider.value;
+                    accumulatorMs = std::min(accumulatorMs, SIM_DT_MS * 400.0); // cap catch-up on a stall
+                    while (accumulatorMs >= SIM_DT_MS) {
+                        if (screen == DemoScreen::VISUALIZE) {
+                            for (IzhikevichNeuron& neuron : neurons) neuron.step(currentSlider.value);
+                        } else {
+                            customNeuron.step(currentSlider.value);
+                        }
+                        accumulatorMs -= SIM_DT_MS;
+                    }
+                }
+                break;
             }
         }
 
         BeginDrawing();
         ClearBackground(RAYWHITE);
 
-        for (int i = 0; i < static_cast<int>(neurons.size()); ++i) {
-            int row = i / COLS;
-            int col = i % COLS;
-            Rectangle bounds = {
-                MARGIN_X + col * (panelWidth + GAP),
-                GRID_TOP + row * (panelHeight + GAP),
-                panelWidth, panelHeight
-            };
-            drawNeuronPanel(bounds, neurons[static_cast<size_t>(i)]);
+        switch (screen) {
+            case DemoScreen::MENU: {
+                const char* title = "Patrones de Izhikevich";
+                int titleWidth = MeasureText(title, 32);
+                DrawText(title, SCREEN_WIDTH / 2 - titleWidth / 2, static_cast<int>(SCREEN_HEIGHT / 2.0f - 140.0f), 32, DARKGRAY);
+                visualizeButton.draw(mouse);
+                createButton.draw(mouse);
+                break;
+            }
+
+            case DemoScreen::VISUALIZE: {
+                for (int i = 0; i < static_cast<int>(neurons.size()); ++i) {
+                    int row = i / COLS;
+                    int col = i % COLS;
+                    Rectangle bounds = {
+                        MARGIN_X + col * (panelWidth + GAP),
+                        GRID_TOP + row * (panelHeight + GAP),
+                        panelWidth, panelHeight
+                    };
+                    drawNeuronPanel(bounds, neurons[static_cast<size_t>(i)]);
+                }
+
+                backButton.draw(mouse);
+                playPauseButton.draw(mouse);
+                currentSlider.draw();
+                DrawText(TextFormat("Corriente: %.1f", currentSlider.value),
+                    static_cast<int>(currentSlider.track.x), static_cast<int>(currentSlider.track.y - 26), 20, DARKGRAY);
+                speedSlider.draw();
+                DrawText(TextFormat("Velocidad: %.2fx", speedSlider.value),
+                    static_cast<int>(speedSlider.track.x), static_cast<int>(speedSlider.track.y - 26), 20, DARKGRAY);
+                break;
+            }
+
+            case DemoScreen::CREATE: {
+                DrawText("Crea tu patron de disparo", static_cast<int>(PARAM_PANEL_LEFT), static_cast<int>(GRID_TOP), 22, DARKGRAY);
+
+                sliderA.draw();
+                DrawText(TextFormat("a (velocidad de recuperacion de u): %.3f", sliderA.value),
+                    static_cast<int>(sliderA.track.x), static_cast<int>(sliderA.track.y - 26), 18, DARKGRAY);
+                sliderB.draw();
+                DrawText(TextFormat("b (sensibilidad de u a v): %.3f", sliderB.value),
+                    static_cast<int>(sliderB.track.x), static_cast<int>(sliderB.track.y - 26), 18, DARKGRAY);
+                sliderC.draw();
+                DrawText(TextFormat("c (voltaje de reinicio tras el pico): %.1f mV", sliderC.value),
+                    static_cast<int>(sliderC.track.x), static_cast<int>(sliderC.track.y - 26), 18, DARKGRAY);
+                sliderD.draw();
+                DrawText(TextFormat("d (incremento de u tras el pico): %.2f", sliderD.value),
+                    static_cast<int>(sliderD.track.x), static_cast<int>(sliderD.track.y - 26), 18, DARKGRAY);
+                resetButton.draw(mouse);
+
+                drawNeuronPanel(plotBounds, customNeuron);
+
+                backButton.draw(mouse);
+                playPauseButton.draw(mouse);
+                currentSlider.draw();
+                DrawText(TextFormat("Corriente: %.1f", currentSlider.value),
+                    static_cast<int>(currentSlider.track.x), static_cast<int>(currentSlider.track.y - 26), 20, DARKGRAY);
+                speedSlider.draw();
+                DrawText(TextFormat("Velocidad: %.2fx", speedSlider.value),
+                    static_cast<int>(speedSlider.track.x), static_cast<int>(speedSlider.track.y - 26), 20, DARKGRAY);
+                break;
+            }
         }
 
-        playPauseButton.draw(mouse);
-        currentSlider.draw();
-        DrawText(TextFormat("Corriente: %.1f", currentSlider.value),
-            static_cast<int>(currentSlider.track.x), static_cast<int>(currentSlider.track.y - 26), 20, DARKGRAY);
-        speedSlider.draw();
-        DrawText(TextFormat("Velocidad: %.2fx", speedSlider.value),
-            static_cast<int>(speedSlider.track.x), static_cast<int>(speedSlider.track.y - 26), 20, DARKGRAY);
-
+        DrawSponsorLogos(SCREEN_WIDTH, SCREEN_HEIGHT);
         EndDrawing();
     }
 

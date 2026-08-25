@@ -6,6 +6,7 @@
 #include <vector>
 
 #include "../include/acrobot_env.hpp"
+#include "../include/branding.hpp"
 #include "../include/car_env.hpp"
 #include "../include/menu.hpp"
 #include "../include/model_browser.hpp"
@@ -16,8 +17,12 @@
 #define SCREEN_WIDTH 1680
 #define SCREEN_HEIGHT 900
 
-// "Lenta" stretches real time by this factor so individual spike hops are easy to follow.
-static constexpr double SNN_SLOWDOWN_FACTOR = 20.0;
+// Playback speed levels, cycled with SPACE: each factor stretches real time by that much so
+// individual spike hops become easier to follow, from "Tiempo real" (1x) through "Lenta"
+// (20x) to "Ultra lenta" (100x) for tracing single impulses/synapses in fine detail.
+static constexpr double SNN_SPEED_FACTORS[] = { 1.0, 20.0, 1000.0 };
+static constexpr const char* SNN_SPEED_LABELS[] = { "Tiempo real", "Lenta", "Ultra lenta" };
+static constexpr int SNN_SPEED_LEVEL_COUNT = 3;
 
 // Wall-clock duration of one real env step, per task -- what "Real" speed maps the 20ms
 // SNN decision window to. Acrobot and Racing Car have an exact physical DT (ported
@@ -91,6 +96,65 @@ static double decodeCarContinuousAction(const SnnNetwork& net, int outputIndex) 
 	return std::clamp(value * 2.0 - 1.0, -1.0, 1.0);
 }
 
+// Feeds SnnNetwork the human-readable input/output readouts for "Evaluar red" (NETWORK_VIEW):
+// per-task observation labels/live values on the input side, and per-task action labels on
+// the output side, with the currently-applied discrete action (if any) highlighted. Reads
+// the same env/pending-action state takeEnvStep() just produced, so labels stay in sync with
+// the spike animation currently playing (that window's input drove that window's output).
+static void updateSnnIoDisplay(SnnNetwork& net, int taskCategory, const AcrobotEnv& acrobotEnv,
+		const MountainCarEnv& mountainCarEnv, const CarEnv& carEnv,
+		double pendingAction, double pendingThrottle, double pendingSteering) {
+	if (taskCategory == 0) {
+		std::array<double, 6> obs = acrobotEnv.observe();
+		std::vector<SnnIoEntry> inputs = {
+			{"cos(theta1)", TextFormat("%.2f", obs[0])},
+			{"sin(theta1)", TextFormat("%.2f", obs[1])},
+			{"cos(theta2)", TextFormat("%.2f", obs[2])},
+			{"sin(theta2)", TextFormat("%.2f", obs[3])},
+			{"Vel. angular 1", TextFormat("%.2f rad/s", obs[4])},
+			{"Vel. angular 2", TextFormat("%.2f rad/s", obs[5])},
+		};
+		int winner = static_cast<int>(std::lround(pendingAction + 1.0));
+		std::vector<SnnIoEntry> outputs = {
+			{"Torque -1", (winner == 0) ? "ACTIVA" : ""},
+			{"Sin torque", (winner == 1) ? "ACTIVA" : ""},
+			{"Torque +1", (winner == 2) ? "ACTIVA" : ""},
+		};
+		net.setIoDisplay(inputs, outputs, winner);
+	} else if (taskCategory == 1) {
+		std::array<double, 2> obs = mountainCarEnv.observe();
+		std::vector<SnnIoEntry> inputs = {
+			{"Posicion", TextFormat("%.2f", obs[0])},
+			{"Velocidad", TextFormat("%.3f", obs[1])},
+		};
+		int winner = static_cast<int>(std::lround(pendingAction + 1.0));
+		std::vector<SnnIoEntry> outputs = {
+			{"Empuje izquierda", (winner == 0) ? "ACTIVA" : ""},
+			{"Sin empuje", (winner == 1) ? "ACTIVA" : ""},
+			{"Empuje derecha", (winner == 2) ? "ACTIVA" : ""},
+		};
+		net.setIoDisplay(inputs, outputs, winner);
+	} else if (taskCategory == 2) {
+		std::array<double, 9> obs = carEnv.observe();
+		std::vector<SnnIoEntry> inputs = {
+			{"Posicion X", TextFormat("%.2f m", obs[0])},
+			{"Posicion Y", TextFormat("%.2f m", obs[1])},
+			{"Orientacion", TextFormat("%.2f rad", obs[2])},
+			{"Vel. X", TextFormat("%.2f m/s", obs[3])},
+			{"Vel. Y", TextFormat("%.2f m/s", obs[4])},
+			{"Vel. angular", TextFormat("%.2f rad/s", obs[5])},
+			{"Lidar izquierdo", TextFormat("%.2f", obs[6])},
+			{"Lidar centro", TextFormat("%.2f", obs[7])},
+			{"Lidar derecho", TextFormat("%.2f", obs[8])},
+		};
+		std::vector<SnnIoEntry> outputs = {
+			{"Acelerador/Freno", TextFormat("%.2f", pendingThrottle)},
+			{"Direccion", TextFormat("%.2f", pendingSteering)},
+		};
+		net.setIoDisplay(inputs, outputs, -1);
+	}
+}
+
 int main() {
 	InitWindow(SCREEN_WIDTH,SCREEN_HEIGHT, "NeuroGame");
 	SetTargetFPS(60);
@@ -117,7 +181,7 @@ int main() {
 	};
 
 	SnnNetwork snnNetwork;
-	bool snnSlowMode = false;
+	int snnSpeedLevel = 0; // index into SNN_SPEED_FACTORS/SNN_SPEED_LABELS
 	std::mt19937 rng(std::random_device{}());
 	std::uniform_real_distribution<double> unit(0.0, 1.0);
 	std::uniform_real_distribution<double> signedUnit(-1.0, 1.0);
@@ -280,7 +344,7 @@ int main() {
 					break;
 				}
 				if (IsKeyPressed(KEY_SPACE)) {
-					snnSlowMode = !snnSlowMode;
+					snnSpeedLevel = (snnSpeedLevel + 1) % SNN_SPEED_LEVEL_COUNT;
 				}
 
 				// Real closed loop: apply the action decoded from the window that just
@@ -310,8 +374,7 @@ int main() {
 					}
 				};
 
-				double realStepMs = realStepMsForTask(loadedTaskCategory);
-				if (snnSlowMode) realStepMs *= SNN_SLOWDOWN_FACTOR;
+				double realStepMs = realStepMsForTask(loadedTaskCategory) * SNN_SPEED_FACTORS[snnSpeedLevel];
 				double speed = SnnNetwork::SIM_WINDOW_MS / realStepMs; // sim-ms per wall-ms
 
 				// A single advance() per rendered frame (60 FPS) can't keep up with tasks
@@ -447,6 +510,10 @@ int main() {
 		BeginDrawing();
 		ClearBackground(RAYWHITE);
 		if (menu.getStatus() == NETWORK_VIEW) {
+			if (loadedTaskCategory >= 0 && loadedTaskCategory <= 2) {
+				updateSnnIoDisplay(snnNetwork, loadedTaskCategory, acrobotEnv, mountainCarEnv, carEnv,
+					pendingAction, pendingThrottle, pendingSteering);
+			}
 			snnNetwork.draw(networkPanelBounds);
 			DrawText("Red neuronal", static_cast<int>(networkPanelBounds.x), 95, 20, DARKGRAY);
 
@@ -472,7 +539,9 @@ int main() {
 			float dividerX = networkPanelBounds.x + networkPanelBounds.width + 20;
 			DrawLineEx({ dividerX, networkPanelBounds.y }, { dividerX, networkPanelBounds.y + networkPanelBounds.height }, 1.0f, LIGHTGRAY);
 
-			DrawText(snnSlowMode ? "Velocidad: Lenta (ESPACIO para tiempo real)" : "Velocidad: Tiempo real (ESPACIO para lenta)",
+			int nextSpeedLevel = (snnSpeedLevel + 1) % SNN_SPEED_LEVEL_COUNT;
+			DrawText(TextFormat("Velocidad: %s (ESPACIO para %s)",
+					SNN_SPEED_LABELS[snnSpeedLevel], SNN_SPEED_LABELS[nextSpeedLevel]),
 				20, 70, 20, DARKGRAY);
 		} else if (menu.getStatus() == VS_AI_RACING_CAR) {
 			aiCarEnv.drawTrack(racePanelBounds);
@@ -523,6 +592,7 @@ int main() {
 			drawArrowIcon(menu.getLeftActionButton().getButton(), false, DARKGRAY);
 			drawArrowIcon(menu.getRightActionButton().getButton(), true, DARKGRAY);
 		}
+		DrawSponsorLogos(SCREEN_WIDTH, SCREEN_HEIGHT);
 		EndDrawing();
 	}
 

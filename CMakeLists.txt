@@ -4,7 +4,17 @@ project(NeuroGame CXX)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-find_package(raylib REQUIRED)
+include(FetchContent)
+set(FETCHCONTENT_QUIET FALSE)
+set(BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
+set(BUILD_GAMES OFF CACHE BOOL "" FORCE)
+FetchContent_Declare(
+    raylib
+    GIT_REPOSITORY https://github.com/raysan5/raylib.git
+    GIT_TAG 5.5
+    GIT_SHALLOW TRUE
+)
+FetchContent_MakeAvailable(raylib)
 
 add_executable(NeuroGame
     src/main.cpp
@@ -15,6 +25,7 @@ add_executable(NeuroGame
     src/acrobot_env.cpp
     src/mountain_car_env.cpp
     src/car_env.cpp
+    src/branding.cpp
 )
 
 target_include_directories(NeuroGame PRIVATE include)
@@ -27,6 +38,7 @@ add_executable(IzhikevichDemo
     src/main_izhikevich.cpp
     src/button.cpp
     src/snn_network.cpp
+    src/branding.cpp
 )
 
 target_include_directories(IzhikevichDemo PRIVATE include)
@@ -39,6 +51,7 @@ add_executable(SynapseDemo
     src/main_synapse_demo.cpp
     src/button.cpp
     src/snn_network.cpp
+    src/branding.cpp
 )
 
 target_include_directories(SynapseDemo PRIVATE include)
@@ -50,6 +63,7 @@ target_link_libraries(SynapseDemo PRIVATE raylib)
 # has no dependency on the rest of NeuroGame beyond raylib itself.
 add_executable(EncoderDemo
     src/main_encoder_demo.cpp
+    src/branding.cpp
 )
 
 target_include_directories(EncoderDemo PRIVATE include)

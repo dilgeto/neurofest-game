@@ -6,6 +6,7 @@
 #include <string>
 #include <vector>
 
+#include "../include/branding.hpp"
 #include "../include/button.hpp"
 #include "../include/snn_network.hpp"
 
@@ -285,6 +286,7 @@ int main() {
             }
         }
 
+        DrawSponsorLogos(SCREEN_WIDTH, SCREEN_HEIGHT);
         EndDrawing();
     }
 

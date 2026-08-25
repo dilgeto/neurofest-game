@@ -64,6 +64,15 @@ struct SnnSynapse {
     bool excitatory;
 };
 
+// One human-readable readout drawn next to an input/output node: `label` names the
+// observation channel or action ("Lidar centro", "Direccion"), `value` is the caller's
+// pre-formatted current reading ("0.72", "Torque +1") -- formatting/units are task-specific
+// (main.cpp's job), so SnnNetwork just positions and draws whatever strings it's given.
+struct SnnIoEntry {
+    std::string label;
+    std::string value;
+};
+
 // One 20ms simulated window per call to simulateStep(); advance() scrubs playback through
 // the pre-computed spike raster so drawing/timing stays decoupled from the Izhikevich math.
 class SnnNetwork {
@@ -115,6 +124,17 @@ class SnnNetwork {
 
         void draw(Rectangle bounds) const;
 
+        // Feeds the human-readable input/output readouts drawn next to each input/output
+        // node and in the output-neuron legend. `inputs`/`outputs` are sized per semantic
+        // observation/action variable (e.g. 6 entries for Acrobot even though the "small"
+        // encoder splits each into 2 input nodes -- SnnNetwork maps semantic index back to
+        // node position(s) internally). `highlightedOutput` rings that output node's index
+        // (e.g. the discrete first-spike decoder's current winner); -1 highlights none,
+        // appropriate for continuous-action tasks where every output is always "live".
+        // Call once per frame with fresh values while the corresponding task is loaded.
+        void setIoDisplay(const std::vector<SnnIoEntry>& inputs, const std::vector<SnnIoEntry>& outputs,
+                           int highlightedOutput = -1);
+
         int nodeCount() const { return static_cast<int>(nodes.size()); }
         int inputCount() const { return nInput; }
 
@@ -145,4 +165,8 @@ class SnnNetwork {
         std::vector<std::vector<bool>> spikeRaster; // [tick][node]
         std::vector<Pulse> pulses;
         double simClockMs = SIM_WINDOW_MS;
+
+        std::vector<SnnIoEntry> ioInputs;
+        std::vector<SnnIoEntry> ioOutputs;
+        int ioHighlightedOutput = -1;
 };
