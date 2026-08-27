@@ -95,6 +95,14 @@ const SnnTaskPreset& snnRacingCarPreset() {
     return preset;
 }
 
+const SnnTaskPreset& snnIrisPreset() {
+    // Evolved locally by neuroevolution-izhikevich/src/Classification/iris_wann/
+    // train_iris_wann.py (encoder "ttfs" -> nInput = 4 raw features, no doubling;
+    // nOutput = 3 species). weightVals must match WEIGHT_VALS in that script.
+    static const SnnTaskPreset preset{"Iris", 4, 3, true, {0.5, 1.0, 2.0, 3.0, 5.0, 8.0}, SnnEncoderKind::Ttfs};
+    return preset;
+}
+
 bool SnnNetwork::load(const std::string& outPath, const std::string& wiPath, const SnnTaskPreset& preset, Rectangle bounds) {
     std::ifstream outFile(outPath);
     if (!outFile.is_open()) {

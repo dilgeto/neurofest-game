@@ -25,6 +25,7 @@ add_executable(NeuroGame
     src/acrobot_env.cpp
     src/mountain_car_env.cpp
     src/car_env.cpp
+    src/iris_env.cpp
     src/branding.cpp
 )
 

@@ -13,6 +13,7 @@
 #define VS_AI_RACING_CAR 6
 #define VS_AI_ACROBOT 7
 #define VS_AI_MOUNTAIN_CAR 8
+#define VS_AI_IRIS 9
 
 using namespace std;
 
@@ -27,6 +28,7 @@ class Menu {
         Button selectAcrobot;
         Button selectMountainCar;
         Button selectRacingCar;
+        Button selectIris;
         Button backFromVsAI;
         // Play Network menu
         Button loadNetwork;
@@ -48,6 +50,12 @@ class Menu {
         Button backFromVsAiMountainCar;
         Button leftActionButton;
         Button rightActionButton;
+        // VS AI: Iris (human vs AI, shared flower classification)
+        Button backFromVsAiIris;
+        Button guessSetosa;
+        Button guessVersicolor;
+        Button guessVirginica;
+        Button irisNextRound;
 
     public:
         // Methods
@@ -60,6 +68,7 @@ class Menu {
         Button getSelectAcrobot() {return selectAcrobot;}
         Button getSelectMountainCar() {return selectMountainCar;}
         Button getSelectRacingCar() {return selectRacingCar;}
+        Button getSelectIris() {return selectIris;}
         Button getBackFromVsAI() {return backFromVsAI;}
         Button getLoadNetwork() {return loadNetwork;}
         Button getCreateNetwork() {return createNetwork;}
@@ -75,6 +84,11 @@ class Menu {
         Button getBackFromVsAiMountainCar() {return backFromVsAiMountainCar;}
         Button getLeftActionButton() {return leftActionButton;}
         Button getRightActionButton() {return rightActionButton;}
+        Button getBackFromVsAiIris() {return backFromVsAiIris;}
+        Button getGuessSetosa() {return guessSetosa;}
+        Button getGuessVersicolor() {return guessVersicolor;}
+        Button getGuessVirginica() {return guessVirginica;}
+        Button getIrisNextRound() {return irisNextRound;}
         // Setters
         void setStatus(int status) {this->status = status;}
         // Drawing

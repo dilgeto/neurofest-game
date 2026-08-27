@@ -8,6 +8,7 @@
 #include "../include/acrobot_env.hpp"
 #include "../include/branding.hpp"
 #include "../include/car_env.hpp"
+#include "../include/iris_env.hpp"
 #include "../include/menu.hpp"
 #include "../include/model_browser.hpp"
 #include "../include/mountain_car_env.hpp"
@@ -179,6 +180,17 @@ int main() {
 		discreteLeftPanelBounds.x + discreteLeftPanelBounds.width + 40, 120,
 		discreteLeftPanelBounds.width, discreteLeftPanelBounds.height
 	};
+	// VS AI (Iris): network on the left, flower on the right, shorter still than the
+	// Acrobot/Mountain Car panels to leave room for the guess buttons *and* the
+	// reveal/prompt text line stacked below them (see IRIS_BUTTONS_ROW_Y/IRIS_TEXT_ROW_Y).
+	const Rectangle irisLeftPanelBounds = { 80, 120, (SCREEN_WIDTH - 160 - 40) / 2.0f, SCREEN_HEIGHT - 200 - 220.0f };
+	const Rectangle irisRightPanelBounds = {
+		irisLeftPanelBounds.x + irisLeftPanelBounds.width + 40, 120,
+		irisLeftPanelBounds.width, irisLeftPanelBounds.height
+	};
+	// Guess/next-round buttons live in Menu (constructed at y=620 -- see menu.cpp); this
+	// is just the text row drawn below them.
+	constexpr float IRIS_TEXT_ROW_Y = 700.0f;
 
 	SnnNetwork snnNetwork;
 	int snnSpeedLevel = 0; // index into SNN_SPEED_FACTORS/SNN_SPEED_LABELS
@@ -221,6 +233,22 @@ int main() {
 	MountainCarEnv aiMountainCarEnv;
 	double raceAiAction = 0.0;
 	double raceDiscreteAccumulatorMs = 0.0;
+
+	// VS AI: Iris -- a single shared flower (no dueling env instances): the human
+	// clicks a species while the AI's network plays out its 20ms decision window, then
+	// both guesses are revealed together against the flower's real species.
+	enum class IrisPhase { Deciding, Revealing };
+	constexpr double IRIS_ANIM_DURATION_MS = 900.0; // wall-clock time to play one 20ms window
+	SnnNetwork irisNetwork;
+	IrisEnv irisRound;
+	IrisPhase irisPhase = IrisPhase::Deciding;
+	int irisHumanGuess = -1;
+	int irisAiGuess = -1;
+	int irisHumanScore = 0;
+	int irisAiScore = 0;
+	int irisStreak = 0;
+	double irisRoundStartTime = 0.0;    // GetTime() when the current flower was shown
+	double irisHumanDecisionTimeSec = 0.0; // frozen the instant the human picks a species
 
 	while (!WindowShouldClose() && !quitRequested) {
 		// Mouse position
@@ -273,6 +301,19 @@ int main() {
 						raceAiSteering = decodeCarContinuousAction(raceAiNetwork, 1);
 						racePhysicsAccumulatorMs = 0.0;
 						menu.setStatus(VS_AI_RACING_CAR);
+					}
+				} else if (menu.getSelectIris().isClicked(mousePosition)) {
+					std::vector<SnnModelEntry> models = listSnnModels("models/iris");
+					if (!models.empty() &&
+						irisNetwork.load(models[0].outPath, models[0].wiPath, snnIrisPreset(), irisLeftPanelBounds)) {
+						irisRound.pickRandom(rng);
+						std::array<double, 4> obs = irisRound.observe();
+						irisNetwork.simulateStep(std::vector<double>(obs.begin(), obs.end()));
+						irisPhase = IrisPhase::Deciding;
+						irisHumanGuess = -1;
+						irisAiGuess = -1;
+						irisRoundStartTime = GetTime();
+						menu.setStatus(VS_AI_IRIS);
 					}
 				} else if (menu.getBackFromVsAI().isClicked(mousePosition)) {
 					menu.setStatus(MAIN_MENU);
@@ -504,6 +545,51 @@ int main() {
 				}
 				break;
 			}
+
+			case VS_AI_IRIS: {
+				if (menu.getBackFromVsAiIris().isClicked(mousePosition)) {
+					menu.setStatus(VS_AI_MENU);
+					break;
+				}
+
+				if (irisPhase == IrisPhase::Deciding) {
+					if (!irisNetwork.isStepFinished()) {
+						double speed = SnnNetwork::SIM_WINDOW_MS / IRIS_ANIM_DURATION_MS; // sim-ms per wall-ms
+						irisNetwork.advance(GetFrameTime() * 1000.0 * speed);
+					}
+
+					// A guess is final the instant it's clicked -- this is also the moment
+					// the decision-time stopwatch freezes, so re-clicking a different
+					// species afterward (while still waiting on the AI's animation) can't
+					// change it.
+					if (irisHumanGuess < 0) {
+						if (menu.getGuessSetosa().isClicked(mousePosition)) irisHumanGuess = 0;
+						else if (menu.getGuessVersicolor().isClicked(mousePosition)) irisHumanGuess = 1;
+						else if (menu.getGuessVirginica().isClicked(mousePosition)) irisHumanGuess = 2;
+						if (irisHumanGuess >= 0) irisHumanDecisionTimeSec = GetTime() - irisRoundStartTime;
+					}
+
+					if (irisHumanGuess >= 0 && irisNetwork.isStepFinished()) {
+						irisAiGuess = irisNetwork.decodeFirstSpikeWinner();
+						bool humanCorrect = irisHumanGuess == irisRound.trueLabel();
+						bool aiCorrect = irisAiGuess == irisRound.trueLabel();
+						if (humanCorrect) { ++irisHumanScore; ++irisStreak; } else { irisStreak = 0; }
+						if (aiCorrect) ++irisAiScore;
+						irisPhase = IrisPhase::Revealing;
+					}
+				} else { // Revealing
+					if (menu.getIrisNextRound().isClicked(mousePosition)) {
+						irisRound.pickRandom(rng);
+						std::array<double, 4> obs = irisRound.observe();
+						irisNetwork.simulateStep(std::vector<double>(obs.begin(), obs.end()));
+						irisHumanGuess = -1;
+						irisAiGuess = -1;
+						irisRoundStartTime = GetTime();
+						irisPhase = IrisPhase::Deciding;
+					}
+				}
+				break;
+			}
 		}
 
 		// Drawing
@@ -574,6 +660,58 @@ int main() {
 			DrawLineEx({ mcDividerX, discreteLeftPanelBounds.y }, { mcDividerX, discreteLeftPanelBounds.y + discreteLeftPanelBounds.height }, 1.0f, LIGHTGRAY);
 			DrawText("Manten presionado Izquierda o Derecha para empujar el auto",
 				static_cast<int>(discreteLeftPanelBounds.x), static_cast<int>(discreteLeftPanelBounds.y + discreteLeftPanelBounds.height + 12), 18, GRAY);
+		} else if (menu.getStatus() == VS_AI_IRIS) {
+			// The AI's decoded species stays hidden (no highlighted output/legend entry)
+			// until the round is revealed, even if its spike window finishes first --
+			// otherwise a fast-finishing network would spoil the answer before the human
+			// has picked.
+			int winnerHighlight = (irisPhase == IrisPhase::Revealing) ? irisAiGuess : -1;
+			std::vector<SnnIoEntry> outputs = {
+				{"Setosa", (winnerHighlight == 0) ? "ACTIVA" : ""},
+				{"Versicolor", (winnerHighlight == 1) ? "ACTIVA" : ""},
+				{"Virginica", (winnerHighlight == 2) ? "ACTIVA" : ""},
+			};
+			irisNetwork.setIoDisplay({}, outputs, winnerHighlight);
+			irisNetwork.draw(irisLeftPanelBounds);
+			DrawText("Red neuronal (IA)", static_cast<int>(irisLeftPanelBounds.x), 95, 20, DARKGRAY);
+
+			irisRound.draw(irisRightPanelBounds);
+			DrawText("Adivina la flor", static_cast<int>(irisRightPanelBounds.x), 95, 20, DARKGRAY);
+
+			float dividerX = irisLeftPanelBounds.x + irisLeftPanelBounds.width + 20;
+			DrawLineEx({ dividerX, irisLeftPanelBounds.y }, { dividerX, irisLeftPanelBounds.y + irisLeftPanelBounds.height }, 1.0f, LIGHTGRAY);
+
+			std::string scoreText = TextFormat("Tu: %d   IA: %d   Racha: %d", irisHumanScore, irisAiScore, irisStreak);
+			int scoreWidth = MeasureText(scoreText.c_str(), 22);
+			DrawText(scoreText.c_str(), SCREEN_WIDTH / 2 - scoreWidth / 2, 60, 22, DARKGRAY);
+
+			if (irisPhase == IrisPhase::Deciding) {
+				// Drawn manually (not by Menu::draw()) so they can be hidden once revealed
+				// instead of sitting inert on top of the reveal text/next-round button.
+				menu.getGuessSetosa().draw(mousePosition);
+				menu.getGuessVersicolor().draw(mousePosition);
+				menu.getGuessVirginica().draw(mousePosition);
+
+				// Live stopwatch: keeps counting up until the guess is locked in, then
+				// holds at irisHumanDecisionTimeSec while the AI's animation finishes.
+				double elapsedSec = (irisHumanGuess < 0) ? (GetTime() - irisRoundStartTime) : irisHumanDecisionTimeSec;
+				std::string prompt = (irisHumanGuess < 0)
+					? TextFormat("Elegi una especie mientras la red decide... (%.1fs)", elapsedSec)
+					: TextFormat("Elegiste en %.1fs. Esperando a la IA...", elapsedSec);
+				int promptWidth = MeasureText(prompt.c_str(), 18);
+				DrawText(prompt.c_str(), SCREEN_WIDTH / 2 - promptWidth / 2, static_cast<int>(IRIS_TEXT_ROW_Y), 18, GRAY);
+			} else {
+				bool humanCorrect = irisHumanGuess == irisRound.trueLabel();
+				bool aiCorrect = irisAiGuess == irisRound.trueLabel();
+				std::string reveal = TextFormat("Real: %s   |   Vos: %s %s en %.1fs   |   IA: %s %s",
+					IRIS_SPECIES_NAMES[irisRound.trueLabel()],
+					IRIS_SPECIES_NAMES[irisHumanGuess], humanCorrect ? "(correcto)" : "(incorrecto)", irisHumanDecisionTimeSec,
+					IRIS_SPECIES_NAMES[irisAiGuess], aiCorrect ? "(correcto)" : "(incorrecto)");
+				int revealWidth = MeasureText(reveal.c_str(), 20);
+				DrawText(reveal.c_str(), SCREEN_WIDTH / 2 - revealWidth / 2, static_cast<int>(IRIS_TEXT_ROW_Y), 20,
+					(humanCorrect ? Color{40, 150, 70, 255} : Color{200, 60, 60, 255}));
+				menu.getIrisNextRound().draw(mousePosition);
+			}
 		} else if (menu.getStatus() == LOAD_NETWORK_FILE_MENU) {
 			const std::string& taskLabel = snnTaskCategories()[static_cast<size_t>(selectedTaskCategory)].label;
 			std::string title = "Modelos disponibles: " + taskLabel;

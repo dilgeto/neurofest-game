@@ -26,10 +26,11 @@ Menu::Menu(float screenWitdh, float screenHeight) :
     playNetwork(stackedButton(screenWitdh, screenHeight / 2.0f, 1, 3), "Evaluar red"),
     quit(stackedButton(screenWitdh, screenHeight / 2.0f, 2, 3), "Salir"),
     // VS AI menu (task selection)
-    selectAcrobot(stackedButton(screenWitdh, screenHeight / 2.0f, 0, 4), "Acrobot"),
-    selectMountainCar(stackedButton(screenWitdh, screenHeight / 2.0f, 1, 4), "Mountain Car"),
-    selectRacingCar(stackedButton(screenWitdh, screenHeight / 2.0f, 2, 4), "Racing Car"),
-    backFromVsAI(stackedButton(screenWitdh, screenHeight / 2.0f, 3, 4), "Volver"),
+    selectAcrobot(stackedButton(screenWitdh, screenHeight / 2.0f, 0, 5), "Acrobot"),
+    selectMountainCar(stackedButton(screenWitdh, screenHeight / 2.0f, 1, 5), "Mountain Car"),
+    selectRacingCar(stackedButton(screenWitdh, screenHeight / 2.0f, 2, 5), "Racing Car"),
+    selectIris(stackedButton(screenWitdh, screenHeight / 2.0f, 3, 5), "Iris (Adivina la flor)"),
+    backFromVsAI(stackedButton(screenWitdh, screenHeight / 2.0f, 4, 5), "Volver"),
     // Play Network menu
     loadNetwork(stackedButton(screenWitdh, screenHeight / 2.0f, 0, 3), "Cargar red existente"),
     createNetwork(stackedButton(screenWitdh, screenHeight / 2.0f, 1, 3), "Crear nueva red"),
@@ -50,7 +51,16 @@ Menu::Menu(float screenWitdh, float screenHeight) :
     backFromVsAiMountainCar({20, 20, 140, 40}, "Volver"),
     // Square, no text -- main.cpp draws a direction arrow on top of each instead.
     leftActionButton({screenWitdh / 2.0f - 110.0f, screenHeight - 130.0f, 100.0f, 100.0f}, ""),
-    rightActionButton({screenWitdh / 2.0f + 10.0f, screenHeight - 130.0f, 100.0f, 100.0f}, "")
+    rightActionButton({screenWitdh / 2.0f + 10.0f, screenHeight - 130.0f, 100.0f, 100.0f}, ""),
+    // VS AI: Iris -- 3 species buttons in a centered row; "Siguiente flor" shares the
+    // same row (only one of the two groups is ever drawn at a time, by main.cpp, based
+    // on round phase). Row y (620) must stay in sync with IRIS_BUTTONS_ROW_Y in main.cpp
+    // -- both sit just below irisLeftPanelBounds/irisRightPanelBounds there.
+    backFromVsAiIris({20, 20, 140, 40}, "Volver"),
+    guessSetosa({screenWitdh / 2.0f - 320.0f, 620.0f, 200.0f, 60.0f}, "Setosa"),
+    guessVersicolor({screenWitdh / 2.0f - 100.0f, 620.0f, 200.0f, 60.0f}, "Versicolor"),
+    guessVirginica({screenWitdh / 2.0f + 120.0f, 620.0f, 200.0f, 60.0f}, "Virginica"),
+    irisNextRound({screenWitdh / 2.0f - 110.0f, 620.0f, 220.0f, 60.0f}, "Siguiente flor")
     {}
 
 void Menu::draw(Vector2 mousePosition) const {
@@ -65,6 +75,7 @@ void Menu::draw(Vector2 mousePosition) const {
             selectAcrobot.draw(mousePosition);
             selectMountainCar.draw(mousePosition);
             selectRacingCar.draw(mousePosition);
+            selectIris.draw(mousePosition);
             backFromVsAI.draw(mousePosition);
             break;
 
@@ -103,6 +114,12 @@ void Menu::draw(Vector2 mousePosition) const {
             backFromVsAiMountainCar.draw(mousePosition);
             leftActionButton.draw(mousePosition);
             rightActionButton.draw(mousePosition);
+            break;
+
+        case VS_AI_IRIS:
+            // Guess/next-round buttons are drawn by main.cpp instead (conditionally, by
+            // round phase) -- see the VS_AI_IRIS drawing block in main.cpp.
+            backFromVsAiIris.draw(mousePosition);
             break;
     }
 }

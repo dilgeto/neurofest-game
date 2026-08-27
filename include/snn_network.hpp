@@ -46,6 +46,7 @@ struct SnnTaskPreset {
 const SnnTaskPreset& snnAcrobotPreset();
 const SnnTaskPreset& snnMountainCarPreset();
 const SnnTaskPreset& snnRacingCarPreset();
+const SnnTaskPreset& snnIrisPreset();
 
 struct SnnNode {
     SnnNeuronParams params;
