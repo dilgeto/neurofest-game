@@ -49,6 +49,7 @@ namespace {
     }
 
     constexpr double SIM_DT_MS = 0.5;
+    constexpr double SMALL_SPEED_FACTOR = 0.1; // slow the Signed trace 10x so it's easy to follow
     constexpr double TAU_EXC = 5.0;
     constexpr double V_THRESHOLD = 30.0;
     constexpr double PLOT_V_MIN = -90.0;
@@ -172,7 +173,7 @@ namespace {
 }
 
 int main() {
-    InitWindow(SCREEN_WIDTH, SCREEN_HEIGHT, "Codificadores WANN: TTFS y SMALL (con signo)");
+    InitWindow(SCREEN_WIDTH, SCREEN_HEIGHT, "Codificadores WANN: TTFS y Signed");
     SetTargetFPS(60);
 
     constexpr float MARGIN_X = 40.0f;
@@ -219,9 +220,10 @@ int main() {
             ttfsFlashMs[i] = std::max(0.0f, ttfsFlashMs[i] - frameMs);
         }
 
-        // SMALL: continuous real-time Izhikevich simulation of the two channel neurons.
+        // Signed (SMALL): continuous Izhikevich simulation of the two channel neurons,
+        // slowed down so individual spikes are easy to follow.
         auto [negCurrent, posCurrent] = encodeSmall(smallSlider.value);
-        accumulatorMs += frameMs;
+        accumulatorMs += frameMs * SMALL_SPEED_FACTOR;
         accumulatorMs = std::min(accumulatorMs, SIM_DT_MS * 400.0);
         while (accumulatorMs >= SIM_DT_MS) {
             negNeuron.tick(negCurrent);
@@ -235,15 +237,15 @@ int main() {
         ClearBackground(RAYWHITE);
 
         drawTtfsPanel(ttfsBounds, ttfsSpikes, ttfsFlashMs, cursorTimeMs);
-        drawSmallPanel(smallNegBounds, "SMALL - canal negativo", negNeuron, Color{220, 90, 70, 255});
-        drawSmallPanel(smallPosBounds, "SMALL - canal positivo", posNeuron, Color{60, 170, 90, 255});
+        drawSmallPanel(smallNegBounds, "Signed - canal negativo", negNeuron, Color{220, 90, 70, 255});
+        drawSmallPanel(smallPosBounds, "Signed - canal positivo", posNeuron, Color{60, 170, 90, 255});
 
         ttfsSlider.draw();
         DrawText(TextFormat("Valor TTFS: %.2f", ttfsSlider.value),
             static_cast<int>(ttfsSlider.track.x), static_cast<int>(ttfsSlider.track.y - 26), 20, DARKGRAY);
 
         smallSlider.draw();
-        DrawText(TextFormat("Valor SMALL (con signo): %.2f", smallSlider.value),
+        DrawText(TextFormat("Valor Signed: %.2f", smallSlider.value),
             static_cast<int>(smallSlider.track.x), static_cast<int>(smallSlider.track.y - 26), 20, DARKGRAY);
 
         DrawSponsorLogos(SCREEN_WIDTH, SCREEN_HEIGHT);
