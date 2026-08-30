@@ -68,3 +68,26 @@ add_executable(EncoderDemo
 
 target_include_directories(EncoderDemo PRIVATE include)
 target_link_libraries(EncoderDemo PRIVATE raylib)
+
+# Standalone demo: shows the two encoders actually used by this project's trained WANN
+# models -- TTFS and SMALL/signed -- as opposed to EncoderDemo's generic textbook survey
+# (see src/main_encoder_demo_wann.cpp). Reuses snn_network.cpp's neuron-parameter table.
+add_executable(EncoderDemoWANN
+    src/main_encoder_demo_wann.cpp
+    src/snn_network.cpp
+    src/branding.cpp
+)
+
+target_include_directories(EncoderDemoWANN PRIVATE include)
+target_link_libraries(EncoderDemoWANN PRIVATE raylib)
+
+# Standalone demo: shows how the FIRST_SPIKE and RATE_ARGMAX decoders (rlDecoder.cpp's
+# RLDecoder::decodeDiscreteAction) pick a winner among several channels' spike trains, and
+# how they can disagree given the exact same spikes (see src/main_decoder_demo.cpp).
+add_executable(DecoderDemo
+    src/main_decoder_demo.cpp
+    src/branding.cpp
+)
+
+target_include_directories(DecoderDemo PRIVATE include)
+target_link_libraries(DecoderDemo PRIVATE raylib)
