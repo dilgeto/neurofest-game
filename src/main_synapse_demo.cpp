@@ -287,6 +287,7 @@ int main() {
         }
 
         DrawSponsorLogos(SCREEN_WIDTH, SCREEN_HEIGHT);
+        DrawFondecytCredit(SCREEN_WIDTH, SCREEN_HEIGHT);
         EndDrawing();
     }
 

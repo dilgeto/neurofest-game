@@ -7,13 +7,13 @@
 
 #include "../include/branding.hpp"
 
-// Standalone demo (separate binary from NeuroGame): shows how 4 of snn-simulator's spike
-// encoders (include/encoding/{ttfs,rate,poisson}Encoder.*) turn a single number in [0,1]
-// into a spike train. Formulas reimplemented locally (verified against those exact
-// sources) rather than linking the external snn-simulator repo:
-//   TTFS (linear/logarithmic): one spike, timed so a higher value fires earlier.
-//   Rate / Poisson: a Bernoulli trial each dt with p = value*maxRate/1000*dt; Poisson
-//   additionally enforces a refractory period after each spike.
+// Standalone demo (separate binary from NeuroGame): shows how 2 of snn-simulator's spike
+// encoders (include/encoding/{ttfs,rate}Encoder.*) turn a single number in [0,1] into a
+// spike train -- one temporal encoder, one rate encoder, per the course's request.
+// Formulas reimplemented locally (verified against those exact sources) rather than
+// linking the external snn-simulator repo:
+//   TTFS (linear): one spike, timed so a higher value fires earlier.
+//   Rate: a Bernoulli trial each dt with p = value*maxRate/1000*dt.
 
 namespace {
     constexpr int SCREEN_WIDTH = 1680;
@@ -22,7 +22,6 @@ namespace {
     constexpr double ENCODE_DURATION_MS = 100.0; // window each encoder encodes into
     constexpr double ENCODE_DT_MS = 1.0;
     constexpr double MAX_RATE = 100.0;           // Hz, matches wann-cpp's encoder setup
-    constexpr double POISSON_REFRACTORY_MS = 2.0;
     constexpr double TTFS_THRESHOLD = 1e-9;
 
     constexpr double SWEEP_DURATION_MS = 1500.0; // wall-clock time for one cursor pass;
@@ -39,14 +38,6 @@ namespace {
         return { std::clamp(t, 0.0, ENCODE_DURATION_MS - ENCODE_DT_MS) };
     }
 
-    std::vector<double> encodeTtfsLogarithmic(double value) {
-        if (value < 0.0 || value > 1.0 || value < TTFS_THRESHOLD) return {};
-        double tMax = ENCODE_DURATION_MS - ENCODE_DT_MS;
-        double t = (1.0 - std::log1p(value * (M_E - 1.0))) * tMax;
-        t = std::round(t / ENCODE_DT_MS) * ENCODE_DT_MS;
-        return { std::clamp(t, 0.0, ENCODE_DURATION_MS - ENCODE_DT_MS) };
-    }
-
     std::vector<double> encodeRate(double value, std::mt19937& rng) {
         if (value < 0.0 || value > 1.0) return {};
         std::vector<double> spikes;
@@ -54,19 +45,6 @@ namespace {
         std::uniform_real_distribution<double> dis(0.0, 1.0);
         for (double t = 0; t < ENCODE_DURATION_MS; t += ENCODE_DT_MS)
             if (dis(rng) < spikeProb) spikes.push_back(t);
-        return spikes;
-    }
-
-    std::vector<double> encodePoisson(double value, std::mt19937& rng) {
-        value = std::clamp(value, 0.0, 1.0);
-        std::vector<double> spikes;
-        double spikeProb = (value * MAX_RATE / 1000.0) * ENCODE_DT_MS;
-        std::uniform_real_distribution<double> dis(0.0, 1.0);
-        double lastSpike = -POISSON_REFRACTORY_MS - 1.0;
-        for (double t = 0; t < ENCODE_DURATION_MS; t += ENCODE_DT_MS) {
-            if ((t - lastSpike) < POISSON_REFRACTORY_MS) continue;
-            if (dis(rng) < spikeProb) { spikes.push_back(t); lastSpike = t; }
-        }
         return spikes;
     }
 
@@ -148,17 +126,15 @@ int main() {
     std::mt19937 rng(std::random_device{}());
 
     std::vector<EncoderPanel> panels = {
-        { "TTFS (lineal)", "t = (1 - v) x t_max", Color{60, 110, 220, 255}, {}, {}, {} },
-        { "TTFS (logaritmico)", "t = (1 - log(1 + v(e-1))) x t_max", Color{170, 110, 220, 255}, {}, {}, {} },
+        { "Temporal (TTFS lineal)", "t = (1 - v) x t_max", Color{60, 110, 220, 255}, {}, {}, {} },
         { "Rate", "p(spike) = v x maxRate/1000 x dt, cada dt", Color{60, 170, 90, 255}, {}, {}, {} },
-        { "Poisson", "igual que Rate + periodo refractario 2ms", Color{220, 90, 70, 255}, {}, {}, {} },
     };
 
     constexpr float MARGIN_X = 40.0f;
     constexpr float GRID_TOP = 30.0f;
     constexpr float GAP = 20.0f;
     constexpr int COLS = 2;
-    constexpr int ROWS = 2;
+    constexpr int ROWS = 1;
 
     Slider valueSlider{ { (SCREEN_WIDTH - 500.0f) / 2.0f, SCREEN_HEIGHT - 90.0f, 500.0f, 10.0f }, 0.0f, 1.0f, 0.5f };
     constexpr float GRID_BOTTOM = SCREEN_HEIGHT - 140.0f;
@@ -170,9 +146,7 @@ int main() {
 
     // Prime the first draw with a real encoding instead of empty panels.
     regenerate(panels[0], encodeTtfsLinear(valueSlider.value));
-    regenerate(panels[1], encodeTtfsLogarithmic(valueSlider.value));
-    regenerate(panels[2], encodeRate(valueSlider.value, rng));
-    regenerate(panels[3], encodePoisson(valueSlider.value, rng));
+    regenerate(panels[1], encodeRate(valueSlider.value, rng));
 
     while (!WindowShouldClose()) {
         Vector2 mouse = GetMousePosition();
@@ -183,9 +157,7 @@ int main() {
         if (sweepProgress >= 1.0) {
             sweepProgress -= 1.0;
             regenerate(panels[0], encodeTtfsLinear(valueSlider.value));
-            regenerate(panels[1], encodeTtfsLogarithmic(valueSlider.value));
-            regenerate(panels[2], encodeRate(valueSlider.value, rng));
-            regenerate(panels[3], encodePoisson(valueSlider.value, rng));
+            regenerate(panels[1], encodeRate(valueSlider.value, rng));
         }
         double cursorTimeMs = sweepProgress * ENCODE_DURATION_MS;
 
@@ -218,6 +190,7 @@ int main() {
             static_cast<int>(valueSlider.track.x), static_cast<int>(valueSlider.track.y - 26), 20, DARKGRAY);
 
         DrawSponsorLogos(SCREEN_WIDTH, SCREEN_HEIGHT);
+        DrawFondecytCredit(SCREEN_WIDTH, SCREEN_HEIGHT);
         EndDrawing();
     }
 

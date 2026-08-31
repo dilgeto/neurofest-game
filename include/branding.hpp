@@ -7,3 +7,8 @@
 // Paths are relative to the working directory the executable is run from (img/*, same
 // convention main.cpp uses for "models/..."), so run built executables from the repo root.
 void DrawSponsorLogos(float screenWidth, float screenHeight);
+
+// Draws the funding-project attribution ("Fondecyt Regular 1251455 NeuroMetaEvo: ...")
+// anchored to the bottom-left corner, mirroring DrawSponsorLogos on the opposite side. Call
+// once per frame alongside it, right before EndDrawing().
+void DrawFondecytCredit(float screenWidth, float screenHeight);

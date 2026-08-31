@@ -22,6 +22,10 @@ class IrisEnv {
 
         int trueLabel() const { return sample_.label; }
 
+        // Raw (un-normalized, cm) measurements of the current flower -- used to label the
+        // 4 input neurons with their actual values in the "Evaluar red"-style IO display.
+        const IrisSample& sample() const { return sample_; }
+
         void draw(Rectangle bounds) const;
 
     private:

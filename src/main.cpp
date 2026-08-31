@@ -666,12 +666,19 @@ int main() {
 			// otherwise a fast-finishing network would spoil the answer before the human
 			// has picked.
 			int winnerHighlight = (irisPhase == IrisPhase::Revealing) ? irisAiGuess : -1;
+			const IrisSample& irisSample = irisRound.sample();
+			std::vector<SnnIoEntry> inputs = {
+				{"Sepalo largo", TextFormat("%.1f cm", irisSample.sepalLength)},
+				{"Sepalo ancho", TextFormat("%.1f cm", irisSample.sepalWidth)},
+				{"Petalo largo", TextFormat("%.1f cm", irisSample.petalLength)},
+				{"Petalo ancho", TextFormat("%.1f cm", irisSample.petalWidth)},
+			};
 			std::vector<SnnIoEntry> outputs = {
 				{"Setosa", (winnerHighlight == 0) ? "ACTIVA" : ""},
 				{"Versicolor", (winnerHighlight == 1) ? "ACTIVA" : ""},
 				{"Virginica", (winnerHighlight == 2) ? "ACTIVA" : ""},
 			};
-			irisNetwork.setIoDisplay({}, outputs, winnerHighlight);
+			irisNetwork.setIoDisplay(inputs, outputs, winnerHighlight);
 			irisNetwork.draw(irisLeftPanelBounds);
 			DrawText("Red neuronal (IA)", static_cast<int>(irisLeftPanelBounds.x), 95, 20, DARKGRAY);
 
@@ -731,6 +738,7 @@ int main() {
 			drawArrowIcon(menu.getRightActionButton().getButton(), true, DARKGRAY);
 		}
 		DrawSponsorLogos(SCREEN_WIDTH, SCREEN_HEIGHT);
+		DrawFondecytCredit(SCREEN_WIDTH, SCREEN_HEIGHT);
 		EndDrawing();
 	}
 

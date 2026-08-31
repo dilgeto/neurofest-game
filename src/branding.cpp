@@ -43,3 +43,21 @@ void DrawSponsorLogos(float screenWidth, float screenHeight) {
         x -= LOGO_GAP;
     }
 }
+
+void DrawFondecytCredit(float screenWidth, float screenHeight) {
+    (void)screenWidth;
+    constexpr int FONT = 14;
+    constexpr float MARGIN = 16.0f;
+    constexpr float LINE_GAP = 16.0f;
+    constexpr const char* LINES[] = {
+        "Fondecyt Regular 1251455",
+        "NeuroMetaEvo: Integrating Metaheuristic Techniques with Neuroscience",
+        "for Advanced Neuromorphic Algorithm Design",
+    };
+    constexpr int LINE_COUNT = 3;
+
+    float y = screenHeight - MARGIN - LINE_COUNT * LINE_GAP;
+    for (int i = 0; i < LINE_COUNT; ++i) {
+        DrawText(LINES[i], static_cast<int>(MARGIN), static_cast<int>(y + i * LINE_GAP), FONT, Fade(DARKGRAY, 0.8f));
+    }
+}
