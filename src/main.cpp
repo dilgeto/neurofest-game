@@ -160,6 +160,24 @@ int main() {
 	InitWindow(SCREEN_WIDTH,SCREEN_HEIGHT, "NeuroGame");
 	SetTargetFPS(60);
 
+	// raylib/GLFW only reads gamepad axes/buttons through glfwGetGamepadState(), which
+	// requires the controller's exact USB VID:PID to be present in GLFW's built-in
+	// SDL_GameControllerDB snapshot -- otherwise IsGamepadAvailable() is true but every
+	// axis/button silently reads 0. The GameSir Nova Lite's 2.4GHz dongle (and its wired
+	// USB-C mode, which enumerates identically) shows up as a generic "Zikway HID gamepad"
+	// (bus/vendor/product/version 0003:3537:1041:0111), which isn't in that snapshot. This
+	// mapping was reverse-engineered by reading raw events off /dev/input/js0 while
+	// pressing the physical RIGHT trigger alone (raw axis 4) and then the physical LEFT
+	// trigger alone (raw axis 5, by elimination) -- only the axes VS_AI_RACING_CAR actually
+	// uses (left stick X for steering, both triggers for throttle/brake) were verified;
+	// buttons and the right stick are left unmapped since nothing in this game reads them.
+	// A different GameSir unit/firmware revision (or a different controller entirely) will
+	// need this re-derived the same way.
+	SetGamepadMappings(
+		"03000000373500004110000011010000,GameSir Nova Lite (dongle),"
+		"platform:Linux,leftx:a0,lefty:a1,lefttrigger:a5,righttrigger:a4,"
+	);
+
 	Menu menu = Menu(SCREEN_WIDTH, SCREEN_HEIGHT);
 	bool quitRequested = false;
 
