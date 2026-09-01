@@ -249,6 +249,7 @@ int main() {
             static_cast<int>(smallSlider.track.x), static_cast<int>(smallSlider.track.y - 26), 20, DARKGRAY);
 
         DrawSponsorLogos(SCREEN_WIDTH, SCREEN_HEIGHT);
+        DrawFondecytCredit(SCREEN_WIDTH, SCREEN_HEIGHT);
         EndDrawing();
     }
 
