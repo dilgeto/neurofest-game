@@ -1,5 +1,6 @@
 #include <raylib.h>
 #include <algorithm>
+#include <cmath>
 #include <deque>
 #include <string>
 #include <vector>
@@ -7,6 +8,7 @@
 #include "../include/branding.hpp"
 #include "../include/button.hpp"
 #include "../include/snn_network.hpp"
+#include "../include/ui_scale.hpp"
 
 // Standalone demo (separate binary from NeuroGame): starts on a small menu, then either
 // (a) "Visualizar patrones" -- animates the 6 canonical Izhikevich neuron behaviors side by
@@ -17,8 +19,9 @@
 // `v' = 0.04v^2+5v+140-u+I` (matches snn-simulator/src/core/neuron.cpp).
 
 namespace {
-    constexpr int SCREEN_WIDTH = 1680;
-    constexpr int SCREEN_HEIGHT = 900;
+    // Right half of a 3840x2160 monitor.
+    constexpr int SCREEN_WIDTH = 2160;
+    constexpr int SCREEN_HEIGHT = 3840;
 
     constexpr double SIM_DT_MS = 0.5;       // Izhikevich integration step
     constexpr double WINDOW_MS = 300.0;     // how much history each trace shows
@@ -92,10 +95,14 @@ namespace {
         }
     };
 
+    // Scales a base (1680-wide-reference) pixel size by g_uiScale, rounding to the nearest
+    // integer -- use for every DrawText/MeasureText font-size argument.
+    int FS(float basePx) { return static_cast<int>(std::lround(basePx * g_uiScale)); }
+
     void drawNeuronPanel(Rectangle bounds, const IzhikevichNeuron& neuron) {
         DrawRectangleRec(bounds, Color{250, 250, 251, 255});
         DrawRectangleLinesEx(bounds, 1.5f, LIGHTGRAY);
-        DrawText(neuron.label.c_str(), static_cast<int>(bounds.x + 10), static_cast<int>(bounds.y + 8), 20, DARKGRAY);
+        DrawText(neuron.label.c_str(), static_cast<int>(bounds.x + 10), static_cast<int>(bounds.y + 8), FS(20), DARKGRAY);
 
         // Plot area, leaving room for the title.
         Rectangle plot = { bounds.x + 10, bounds.y + 36, bounds.width - 20, bounds.height - 46 };
@@ -123,7 +130,10 @@ namespace {
 }
 
 int main() {
+    g_uiScale = SCREEN_WIDTH / 1680.0f;
+
     InitWindow(SCREEN_WIDTH, SCREEN_HEIGHT, "Comportamientos de Izhikevich");
+    SetWindowPosition(SCREEN_WIDTH, 0);
     SetTargetFPS(60);
 
     DemoScreen screen = DemoScreen::MENU;
@@ -264,8 +274,8 @@ int main() {
         switch (screen) {
             case DemoScreen::MENU: {
                 const char* title = "Patrones de Izhikevich";
-                int titleWidth = MeasureText(title, 32);
-                DrawText(title, SCREEN_WIDTH / 2 - titleWidth / 2, static_cast<int>(SCREEN_HEIGHT / 2.0f - 140.0f), 32, DARKGRAY);
+                int titleWidth = MeasureText(title, FS(32));
+                DrawText(title, SCREEN_WIDTH / 2 - titleWidth / 2, static_cast<int>(SCREEN_HEIGHT / 2.0f - 140.0f), FS(32), DARKGRAY);
                 visualizeButton.draw(mouse);
                 createButton.draw(mouse);
                 break;
@@ -287,28 +297,28 @@ int main() {
                 playPauseButton.draw(mouse);
                 currentSlider.draw();
                 DrawText(TextFormat("Corriente: %.1f", currentSlider.value),
-                    static_cast<int>(currentSlider.track.x), static_cast<int>(currentSlider.track.y - 26), 20, DARKGRAY);
+                    static_cast<int>(currentSlider.track.x), static_cast<int>(currentSlider.track.y - 26), FS(20), DARKGRAY);
                 speedSlider.draw();
                 DrawText(TextFormat("Velocidad: %.2fx", speedSlider.value),
-                    static_cast<int>(speedSlider.track.x), static_cast<int>(speedSlider.track.y - 26), 20, DARKGRAY);
+                    static_cast<int>(speedSlider.track.x), static_cast<int>(speedSlider.track.y - 26), FS(20), DARKGRAY);
                 break;
             }
 
             case DemoScreen::CREATE: {
-                DrawText("Crea tu patron de disparo", static_cast<int>(PARAM_PANEL_LEFT), static_cast<int>(GRID_TOP), 22, DARKGRAY);
+                DrawText("Crea tu patron de disparo", static_cast<int>(PARAM_PANEL_LEFT), static_cast<int>(GRID_TOP), FS(22), DARKGRAY);
 
                 sliderA.draw();
                 DrawText(TextFormat("a (velocidad de recuperacion de u): %.3f", sliderA.value),
-                    static_cast<int>(sliderA.track.x), static_cast<int>(sliderA.track.y - 26), 18, DARKGRAY);
+                    static_cast<int>(sliderA.track.x), static_cast<int>(sliderA.track.y - 26), FS(18), DARKGRAY);
                 sliderB.draw();
                 DrawText(TextFormat("b (sensibilidad de u a v): %.3f", sliderB.value),
-                    static_cast<int>(sliderB.track.x), static_cast<int>(sliderB.track.y - 26), 18, DARKGRAY);
+                    static_cast<int>(sliderB.track.x), static_cast<int>(sliderB.track.y - 26), FS(18), DARKGRAY);
                 sliderC.draw();
                 DrawText(TextFormat("c (voltaje de reinicio tras el pico): %.1f mV", sliderC.value),
-                    static_cast<int>(sliderC.track.x), static_cast<int>(sliderC.track.y - 26), 18, DARKGRAY);
+                    static_cast<int>(sliderC.track.x), static_cast<int>(sliderC.track.y - 26), FS(18), DARKGRAY);
                 sliderD.draw();
                 DrawText(TextFormat("d (incremento de u tras el pico): %.2f", sliderD.value),
-                    static_cast<int>(sliderD.track.x), static_cast<int>(sliderD.track.y - 26), 18, DARKGRAY);
+                    static_cast<int>(sliderD.track.x), static_cast<int>(sliderD.track.y - 26), FS(18), DARKGRAY);
                 resetButton.draw(mouse);
 
                 drawNeuronPanel(plotBounds, customNeuron);
@@ -317,10 +327,10 @@ int main() {
                 playPauseButton.draw(mouse);
                 currentSlider.draw();
                 DrawText(TextFormat("Corriente: %.1f", currentSlider.value),
-                    static_cast<int>(currentSlider.track.x), static_cast<int>(currentSlider.track.y - 26), 20, DARKGRAY);
+                    static_cast<int>(currentSlider.track.x), static_cast<int>(currentSlider.track.y - 26), FS(20), DARKGRAY);
                 speedSlider.draw();
                 DrawText(TextFormat("Velocidad: %.2fx", speedSlider.value),
-                    static_cast<int>(speedSlider.track.x), static_cast<int>(speedSlider.track.y - 26), 20, DARKGRAY);
+                    static_cast<int>(speedSlider.track.x), static_cast<int>(speedSlider.track.y - 26), FS(20), DARKGRAY);
                 break;
             }
         }

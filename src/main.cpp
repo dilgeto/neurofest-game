@@ -1,6 +1,7 @@
 #include <raylib.h>
 #include <algorithm>
 #include <array>
+#include <cmath>
 #include <random>
 #include <string>
 #include <vector>
@@ -13,10 +14,17 @@
 #include "../include/model_browser.hpp"
 #include "../include/mountain_car_env.hpp"
 #include "../include/snn_network.hpp"
+#include "../include/ui_scale.hpp"
 
 // Screen dimensions
-#define SCREEN_WIDTH 1680
-#define SCREEN_HEIGHT 900
+// Right half of a 3840x2160 monitor.
+#define SCREEN_WIDTH 2160
+#define SCREEN_HEIGHT 3840
+
+// Scales a base (1680-wide-reference) pixel size by g_uiScale, rounding to the nearest
+// integer -- use for every DrawText/MeasureText font-size argument and any other fixed pixel
+// size (radii, gaps) that should stay visually proportionate as SCREEN_WIDTH/HEIGHT change.
+static int FS(float basePx) { return static_cast<int>(std::lround(basePx * g_uiScale)); }
 
 // Playback speed levels, cycled with SPACE: each factor stretches real time by that much so
 // individual spike hops become easier to follow, from "Tiempo real" (1x) through "Lenta"
@@ -156,8 +164,88 @@ static void updateSnnIoDisplay(SnnNetwork& net, int taskCategory, const AcrobotE
 	}
 }
 
+// Gamepad menu navigation: the d-pad moves a "focus" through whatever list of buttons the
+// current screen passes in (nearest neighbor in the pressed direction), A "clicks" whichever
+// button currently has focus, and B always triggers that screen's own "Volver" button,
+// independent of focus. This reuses Button::isClicked()/draw()'s existing mouse-hover
+// collision check unchanged: on a frame where the gamepad is driving, main() overrides the
+// `mousePosition` fed to every isClicked()/draw() call for the rest of that frame to sit at
+// the focused button's center, so the focused button lights up and can be "clicked" without
+// any changes to Button itself. Moving the real mouse hands control back to it immediately.
+struct GamepadMenuNav {
+    int focusIndex = -1;
+    int lastStatus = -1;
+    bool gamepadActive = false;
+
+    void beginFrame(int status, const std::vector<Rectangle>& rects, Vector2 mouseDelta) {
+        if (status != lastStatus || focusIndex >= static_cast<int>(rects.size())) {
+            lastStatus = status;
+            focusIndex = rects.empty() ? -1 : 0;
+        }
+        if (mouseDelta.x != 0.0f || mouseDelta.y != 0.0f) gamepadActive = false;
+        if (!IsGamepadAvailable(0) || rects.empty()) return;
+
+        int dir = -1; // 0=up, 1=down, 2=left, 3=right
+        if (IsGamepadButtonPressed(0, GAMEPAD_BUTTON_LEFT_FACE_UP)) dir = 0;
+        else if (IsGamepadButtonPressed(0, GAMEPAD_BUTTON_LEFT_FACE_DOWN)) dir = 1;
+        else if (IsGamepadButtonPressed(0, GAMEPAD_BUTTON_LEFT_FACE_LEFT)) dir = 2;
+        else if (IsGamepadButtonPressed(0, GAMEPAD_BUTTON_LEFT_FACE_RIGHT)) dir = 3;
+        if (dir < 0) return;
+
+        gamepadActive = true;
+        if (focusIndex < 0) { focusIndex = 0; return; }
+
+        Vector2 from = { rects[static_cast<size_t>(focusIndex)].x + rects[static_cast<size_t>(focusIndex)].width / 2.0f,
+                          rects[static_cast<size_t>(focusIndex)].y + rects[static_cast<size_t>(focusIndex)].height / 2.0f };
+        int best = -1;
+        float bestScore = 1e30f;
+        for (size_t i = 0; i < rects.size(); ++i) {
+            if (static_cast<int>(i) == focusIndex) continue;
+            Vector2 c = { rects[i].x + rects[i].width / 2.0f, rects[i].y + rects[i].height / 2.0f };
+            float dx = c.x - from.x, dy = c.y - from.y;
+            bool matchesDir = (dir == 0 && dy < -1.0f) || (dir == 1 && dy > 1.0f) ||
+                               (dir == 2 && dx < -1.0f) || (dir == 3 && dx > 1.0f);
+            if (!matchesDir) continue;
+            // Prefer candidates roughly aligned with the pressed axis over ones merely closer
+            // in a diagonal sense (weighting the perpendicular offset higher than the primary
+            // one keeps e.g. "down" from jumping sideways into a nearer-but-off-column button).
+            float primary = (dir == 0 || dir == 1) ? std::fabs(dy) : std::fabs(dx);
+            float perp = (dir == 0 || dir == 1) ? std::fabs(dx) : std::fabs(dy);
+            float score = primary + perp * 3.0f;
+            if (score < bestScore) { bestScore = score; best = static_cast<int>(i); }
+        }
+        if (best >= 0) focusIndex = best;
+    }
+
+    // Center of the focused rect once the gamepad is driving; the real mouse position
+    // otherwise (no gamepad, nothing pressed yet this session, or the mouse just moved).
+    Vector2 effectiveMouse(Vector2 realMouse, const std::vector<Rectangle>& rects) const {
+        if (!gamepadActive || focusIndex < 0 || focusIndex >= static_cast<int>(rects.size())) return realMouse;
+        const Rectangle& r = rects[static_cast<size_t>(focusIndex)];
+        return { r.x + r.width / 2.0f, r.y + r.height / 2.0f };
+    }
+
+    bool confirmPressed() const {
+        return gamepadActive && IsGamepadAvailable(0) && IsGamepadButtonPressed(0, GAMEPAD_BUTTON_RIGHT_FACE_DOWN);
+    }
+};
+
+static bool gamepadBackPressed() {
+    return IsGamepadAvailable(0) && IsGamepadButtonPressed(0, GAMEPAD_BUTTON_RIGHT_FACE_RIGHT);
+}
+
+// True if `b` was clicked with the mouse, or if it's the button gamepad focus is currently
+// sitting on (mousePosition already overridden to its center by GamepadMenuNav) and A/confirm
+// was just pressed.
+static bool activated(Button b, Vector2 mousePosition, bool gamepadConfirm) {
+    return b.isClicked(mousePosition) || (gamepadConfirm && CheckCollisionPointRec(mousePosition, b.getButton()));
+}
+
 int main() {
+	g_uiScale = SCREEN_WIDTH / 1680.0f;
+
 	InitWindow(SCREEN_WIDTH,SCREEN_HEIGHT, "NeuroGame");
+	SetWindowPosition(SCREEN_WIDTH, 0);
 	SetTargetFPS(60);
 
 	// raylib/GLFW only reads gamepad axes/buttons through glfwGetGamepadState(), which
@@ -166,16 +254,25 @@ int main() {
 	// axis/button silently reads 0. The GameSir Nova Lite's 2.4GHz dongle (and its wired
 	// USB-C mode, which enumerates identically) shows up as a generic "Zikway HID gamepad"
 	// (bus/vendor/product/version 0003:3537:1041:0111), which isn't in that snapshot. This
-	// mapping was reverse-engineered by reading raw events off /dev/input/js0 while
-	// pressing the physical RIGHT trigger alone (raw axis 4) and then the physical LEFT
-	// trigger alone (raw axis 5, by elimination) -- only the axes VS_AI_RACING_CAR actually
-	// uses (left stick X for steering, both triggers for throttle/brake) were verified;
-	// buttons and the right stick are left unmapped since nothing in this game reads them.
+	// mapping was reverse-engineered by reading raw events off /dev/input/js0 while pressing
+	// one physical control at a time (RIGHT trigger alone -> raw axis 4, LEFT trigger alone
+	// -> raw axis 5; the two face buttons chosen for A/B -> raw buttons 0/1). The right stick
+	// is still unmapped since nothing reads it.
+	//
+	// The d-pad needed a different treatment than /dev/input/js0 suggests: that legacy
+	// "joydev" API flattens a hat switch into two synthetic extra axes (6 and 7 here), but
+	// GLFW's actual Linux backend reads the modern evdev API directly and keeps a hat as a
+	// genuine hat, separate from axisCount -- confirmed via
+	// /sys/class/input/eventN/device/capabilities/abs, which shows this device has only 6
+	// real axes (0-5, the ones already mapped above) plus one hat. Referencing "a6"/"a7" (out
+	// of range) made GLFW discard this *entire* mapping as invalid, not just the d-pad --
+	// hence "dpup:h0.1" etc. below (hat 0, SDL bitmask: 1=up, 2=right, 4=down, 8=left) instead.
 	// A different GameSir unit/firmware revision (or a different controller entirely) will
-	// need this re-derived the same way.
+	// need all of this re-derived the same way.
 	SetGamepadMappings(
 		"03000000373500004110000011010000,GameSir Nova Lite (dongle),"
 		"platform:Linux,leftx:a0,lefty:a1,lefttrigger:a5,righttrigger:a4,"
+		"a:b0,b:b1,dpup:h0.1,dpright:h0.2,dpdown:h0.4,dpleft:h0.8,"
 	);
 
 	Menu menu = Menu(SCREEN_WIDTH, SCREEN_HEIGHT);
@@ -268,23 +365,68 @@ int main() {
 	double irisRoundStartTime = 0.0;    // GetTime() when the current flower was shown
 	double irisHumanDecisionTimeSec = 0.0; // frozen the instant the human picks a species
 
+	GamepadMenuNav gamepadNav;
+
 	while (!WindowShouldClose() && !quitRequested) {
 		// Mouse position
 		Vector2 mousePosition = GetMousePosition();
 
+		// Gamepad menu navigation: gather whichever buttons the current screen (and, for
+		// LOAD_NETWORK_FILE_MENU / VS_AI_IRIS, its current sub-state) actually shows right
+		// now, let the d-pad move focus among them, and -- if the gamepad is the one driving
+		// this frame -- snap `mousePosition` to the focused button's center so every
+		// isClicked()/draw() call below it (both the logic switch and the drawing section)
+		// automatically treats it as hovered, with no per-button changes needed. The "Volver"
+		// button on each screen is deliberately left out of this list: B reaches it directly
+		// (see gamepadBackPressed()) instead of requiring it to be navigated to.
+		std::vector<Rectangle> navRects;
 		switch (menu.getStatus()) {
 			case MAIN_MENU:
-				if (menu.getVsAI().isClicked(mousePosition)) {
+				navRects = { menu.getVsAI().getButton(), menu.getPlayNetwork().getButton(), menu.getQuit().getButton() };
+				break;
+			case VS_AI_MENU:
+				navRects = { menu.getSelectAcrobot().getButton(), menu.getSelectMountainCar().getButton(),
+					menu.getSelectRacingCar().getButton(), menu.getSelectIris().getButton() };
+				break;
+			case PLAY_NETWORK_MENU:
+				navRects = { menu.getLoadNetwork().getButton(), menu.getCreateNetwork().getButton() };
+				break;
+			case LOAD_NETWORK_TASK_MENU:
+				navRects = { menu.getLoadAcrobotTask().getButton(), menu.getLoadMountainCarTask().getButton(),
+					menu.getLoadRacingCarTask().getButton() };
+				break;
+			case LOAD_NETWORK_FILE_MENU:
+				for (Button& b : modelButtons) navRects.push_back(b.getButton());
+				break;
+			case VS_AI_IRIS:
+				if (irisPhase == IrisPhase::Deciding && irisHumanGuess < 0) {
+					navRects = { menu.getGuessSetosa().getButton(), menu.getGuessVersicolor().getButton(),
+						menu.getGuessVirginica().getButton() };
+				} else if (irisPhase == IrisPhase::Revealing) {
+					navRects = { menu.getIrisNextRound().getButton() };
+				}
+				break;
+			default:
+				break;
+		}
+		gamepadNav.beginFrame(menu.getStatus(), navRects, GetMouseDelta());
+		mousePosition = gamepadNav.effectiveMouse(mousePosition, navRects);
+		bool gamepadConfirm = gamepadNav.confirmPressed();
+		bool gamepadBack = gamepadBackPressed();
+
+		switch (menu.getStatus()) {
+			case MAIN_MENU:
+				if (activated(menu.getVsAI(), mousePosition, gamepadConfirm)) {
 					menu.setStatus(VS_AI_MENU);
-				} else if (menu.getPlayNetwork().isClicked(mousePosition)) {
+				} else if (activated(menu.getPlayNetwork(), mousePosition, gamepadConfirm)) {
 					menu.setStatus(PLAY_NETWORK_MENU);
-				} else if (menu.getQuit().isClicked(mousePosition)) {
+				} else if (activated(menu.getQuit(), mousePosition, gamepadConfirm)) {
 					quitRequested = true;
 				}
 				break;
 
 			case VS_AI_MENU:
-				if (menu.getSelectAcrobot().isClicked(mousePosition)) {
+				if (activated(menu.getSelectAcrobot(), mousePosition, gamepadConfirm)) {
 					std::vector<SnnModelEntry> models = listSnnModels("models/acrobot");
 					if (!models.empty() &&
 						raceAiNetwork.load(models[0].outPath, models[0].wiPath, snnAcrobotPreset(), {0, 0, 100, 100})) {
@@ -296,7 +438,7 @@ int main() {
 						raceDiscreteAccumulatorMs = 0.0;
 						menu.setStatus(VS_AI_ACROBOT);
 					}
-				} else if (menu.getSelectMountainCar().isClicked(mousePosition)) {
+				} else if (activated(menu.getSelectMountainCar(), mousePosition, gamepadConfirm)) {
 					std::vector<SnnModelEntry> models = listSnnModels("models/mountain_car");
 					if (!models.empty() &&
 						raceAiNetwork.load(models[0].outPath, models[0].wiPath, snnMountainCarPreset(), {0, 0, 100, 100})) {
@@ -308,7 +450,7 @@ int main() {
 						raceDiscreteAccumulatorMs = 0.0;
 						menu.setStatus(VS_AI_MOUNTAIN_CAR);
 					}
-				} else if (menu.getSelectRacingCar().isClicked(mousePosition)) {
+				} else if (activated(menu.getSelectRacingCar(), mousePosition, gamepadConfirm)) {
 					std::vector<SnnModelEntry> raceModels = listSnnModels("models/racing_car");
 					if (!raceModels.empty() &&
 						raceAiNetwork.load(raceModels[0].outPath, raceModels[0].wiPath, snnRacingCarPreset(), {0, 0, 100, 100})) {
@@ -320,7 +462,7 @@ int main() {
 						racePhysicsAccumulatorMs = 0.0;
 						menu.setStatus(VS_AI_RACING_CAR);
 					}
-				} else if (menu.getSelectIris().isClicked(mousePosition)) {
+				} else if (activated(menu.getSelectIris(), mousePosition, gamepadConfirm)) {
 					std::vector<SnnModelEntry> models = listSnnModels("models/iris");
 					if (!models.empty() &&
 						irisNetwork.load(models[0].outPath, models[0].wiPath, snnIrisPreset(), irisLeftPanelBounds)) {
@@ -333,45 +475,45 @@ int main() {
 						irisRoundStartTime = GetTime();
 						menu.setStatus(VS_AI_IRIS);
 					}
-				} else if (menu.getBackFromVsAI().isClicked(mousePosition)) {
+				} else if (menu.getBackFromVsAI().isClicked(mousePosition) || gamepadBack) {
 					menu.setStatus(MAIN_MENU);
 				}
 				break;
 
 			case PLAY_NETWORK_MENU:
-				if (menu.getLoadNetwork().isClicked(mousePosition)) {
+				if (activated(menu.getLoadNetwork(), mousePosition, gamepadConfirm)) {
 					menu.setStatus(LOAD_NETWORK_TASK_MENU);
-				} else if (menu.getCreateNetwork().isClicked(mousePosition)) {
+				} else if (activated(menu.getCreateNetwork(), mousePosition, gamepadConfirm)) {
 					// TODO: iniciar flujo de creación de una nueva red
-				} else if (menu.getBackFromPlayNetwork().isClicked(mousePosition)) {
+				} else if (menu.getBackFromPlayNetwork().isClicked(mousePosition) || gamepadBack) {
 					menu.setStatus(MAIN_MENU);
 				}
 				break;
 
 			case LOAD_NETWORK_TASK_MENU: {
 				int clickedTask = -1;
-				if (menu.getLoadAcrobotTask().isClicked(mousePosition)) clickedTask = 0;
-				else if (menu.getLoadMountainCarTask().isClicked(mousePosition)) clickedTask = 1;
-				else if (menu.getLoadRacingCarTask().isClicked(mousePosition)) clickedTask = 2;
+				if (activated(menu.getLoadAcrobotTask(), mousePosition, gamepadConfirm)) clickedTask = 0;
+				else if (activated(menu.getLoadMountainCarTask(), mousePosition, gamepadConfirm)) clickedTask = 1;
+				else if (activated(menu.getLoadRacingCarTask(), mousePosition, gamepadConfirm)) clickedTask = 2;
 
 				if (clickedTask >= 0) {
 					selectedTaskCategory = clickedTask;
 					modelEntries = listSnnModels(snnTaskCategories()[clickedTask].directory);
 					modelButtons = buildModelButtons(modelEntries);
 					menu.setStatus(LOAD_NETWORK_FILE_MENU);
-				} else if (menu.getBackFromLoadTask().isClicked(mousePosition)) {
+				} else if (menu.getBackFromLoadTask().isClicked(mousePosition) || gamepadBack) {
 					menu.setStatus(PLAY_NETWORK_MENU);
 				}
 				break;
 			}
 
 			case LOAD_NETWORK_FILE_MENU:
-				if (menu.getBackFromLoadFile().isClicked(mousePosition)) {
+				if (menu.getBackFromLoadFile().isClicked(mousePosition) || gamepadBack) {
 					menu.setStatus(LOAD_NETWORK_TASK_MENU);
 					break;
 				}
 				for (size_t i = 0; i < modelButtons.size(); ++i) {
-					if (!modelButtons[i].isClicked(mousePosition)) continue;
+					if (!activated(modelButtons[i], mousePosition, gamepadConfirm)) continue;
 					const SnnTaskCategory& category = snnTaskCategories()[static_cast<size_t>(selectedTaskCategory)];
 					if (snnNetwork.load(modelEntries[i].outPath, modelEntries[i].wiPath, category.preset(), networkPanelBounds)) {
 						loadedTaskCategory = selectedTaskCategory;
@@ -398,7 +540,7 @@ int main() {
 				break;
 
 			case NETWORK_VIEW: {
-				if (menu.getBackFromNetworkView().isClicked(mousePosition)) {
+				if (menu.getBackFromNetworkView().isClicked(mousePosition) || gamepadBack) {
 					menu.setStatus(PLAY_NETWORK_MENU);
 					break;
 				}
@@ -453,7 +595,7 @@ int main() {
 			}
 
 			case VS_AI_RACING_CAR: {
-				if (menu.getBackFromVsAiRacingCar().isClicked(mousePosition)) {
+				if (menu.getBackFromVsAiRacingCar().isClicked(mousePosition) || gamepadBack) {
 					menu.setStatus(VS_AI_MENU);
 					break;
 				}
@@ -513,12 +655,22 @@ int main() {
 			}
 
 			case VS_AI_ACROBOT: {
-				if (menu.getBackFromVsAiAcrobot().isClicked(mousePosition)) {
+				if (menu.getBackFromVsAiAcrobot().isClicked(mousePosition) || gamepadBack) {
 					menu.setStatus(VS_AI_MENU);
 					break;
 				}
 
+				// Gamepad (analog): left stick X thresholded into a discrete left/right
+				// action -- reuses the same leftx mapping verified for VS_AI_RACING_CAR since
+				// this controller's SetGamepadMappings entry above has no buttons mapped.
 				double humanAction = 0.0;
+				if (IsGamepadAvailable(0)) {
+					constexpr float STICK_DEADZONE = 0.12f;
+					float stickX = GetGamepadAxisMovement(0, GAMEPAD_AXIS_LEFT_X);
+					if (stickX < -STICK_DEADZONE) humanAction = -1.0;
+					else if (stickX > STICK_DEADZONE) humanAction = 1.0;
+				}
+				// Mouse (digital): overrides the gamepad whenever a button is actually held.
 				if (menu.getLeftActionButton().isBeingClicked(mousePosition)) humanAction = -1.0;
 				else if (menu.getRightActionButton().isBeingClicked(mousePosition)) humanAction = 1.0;
 
@@ -539,12 +691,22 @@ int main() {
 			}
 
 			case VS_AI_MOUNTAIN_CAR: {
-				if (menu.getBackFromVsAiMountainCar().isClicked(mousePosition)) {
+				if (menu.getBackFromVsAiMountainCar().isClicked(mousePosition) || gamepadBack) {
 					menu.setStatus(VS_AI_MENU);
 					break;
 				}
 
+				// Gamepad (analog): left stick X thresholded into a discrete left/right
+				// action -- reuses the same leftx mapping verified for VS_AI_RACING_CAR since
+				// this controller's SetGamepadMappings entry above has no buttons mapped.
 				double humanAction = 0.0;
+				if (IsGamepadAvailable(0)) {
+					constexpr float STICK_DEADZONE = 0.12f;
+					float stickX = GetGamepadAxisMovement(0, GAMEPAD_AXIS_LEFT_X);
+					if (stickX < -STICK_DEADZONE) humanAction = -1.0;
+					else if (stickX > STICK_DEADZONE) humanAction = 1.0;
+				}
+				// Mouse (digital): overrides the gamepad whenever a button is actually held.
 				if (menu.getLeftActionButton().isBeingClicked(mousePosition)) humanAction = -1.0;
 				else if (menu.getRightActionButton().isBeingClicked(mousePosition)) humanAction = 1.0;
 
@@ -565,7 +727,7 @@ int main() {
 			}
 
 			case VS_AI_IRIS: {
-				if (menu.getBackFromVsAiIris().isClicked(mousePosition)) {
+				if (menu.getBackFromVsAiIris().isClicked(mousePosition) || gamepadBack) {
 					menu.setStatus(VS_AI_MENU);
 					break;
 				}
@@ -581,9 +743,9 @@ int main() {
 					// species afterward (while still waiting on the AI's animation) can't
 					// change it.
 					if (irisHumanGuess < 0) {
-						if (menu.getGuessSetosa().isClicked(mousePosition)) irisHumanGuess = 0;
-						else if (menu.getGuessVersicolor().isClicked(mousePosition)) irisHumanGuess = 1;
-						else if (menu.getGuessVirginica().isClicked(mousePosition)) irisHumanGuess = 2;
+						if (activated(menu.getGuessSetosa(), mousePosition, gamepadConfirm)) irisHumanGuess = 0;
+						else if (activated(menu.getGuessVersicolor(), mousePosition, gamepadConfirm)) irisHumanGuess = 1;
+						else if (activated(menu.getGuessVirginica(), mousePosition, gamepadConfirm)) irisHumanGuess = 2;
 						if (irisHumanGuess >= 0) irisHumanDecisionTimeSec = GetTime() - irisRoundStartTime;
 					}
 
@@ -596,7 +758,7 @@ int main() {
 						irisPhase = IrisPhase::Revealing;
 					}
 				} else { // Revealing
-					if (menu.getIrisNextRound().isClicked(mousePosition)) {
+					if (activated(menu.getIrisNextRound(), mousePosition, gamepadConfirm)) {
 						irisRound.pickRandom(rng);
 						std::array<double, 4> obs = irisRound.observe();
 						irisNetwork.simulateStep(std::vector<double>(obs.begin(), obs.end()));
@@ -619,25 +781,25 @@ int main() {
 					pendingAction, pendingThrottle, pendingSteering);
 			}
 			snnNetwork.draw(networkPanelBounds);
-			DrawText("Red neuronal", static_cast<int>(networkPanelBounds.x), 95, 20, DARKGRAY);
+			DrawText("Red neuronal", static_cast<int>(networkPanelBounds.x), 95, FS(20), DARKGRAY);
 
 			if (loadedTaskCategory == 0) {
 				acrobotEnv.draw(envPanelBounds, snnNetwork.progress());
-				DrawText("Entorno: Acrobot", static_cast<int>(envPanelBounds.x), 95, 20, DARKGRAY);
+				DrawText("Entorno: Acrobot", static_cast<int>(envPanelBounds.x), 95, FS(20), DARKGRAY);
 			} else if (loadedTaskCategory == 1) {
 				mountainCarEnv.draw(envPanelBounds);
-				DrawText("Entorno: Mountain Car", static_cast<int>(envPanelBounds.x), 95, 20, DARKGRAY);
+				DrawText("Entorno: Mountain Car", static_cast<int>(envPanelBounds.x), 95, FS(20), DARKGRAY);
 			} else if (loadedTaskCategory == 2) {
 				carEnv.draw(envPanelBounds);
-				DrawText("Entorno: Racing Car", static_cast<int>(envPanelBounds.x), 95, 20, DARKGRAY);
+				DrawText("Entorno: Racing Car", static_cast<int>(envPanelBounds.x), 95, FS(20), DARKGRAY);
 				DrawText(TextFormat("Pasos: %d", carEnv.stepCount()),
-					static_cast<int>(envPanelBounds.x), static_cast<int>(envPanelBounds.y + envPanelBounds.height - 20), 18, DARKGRAY);
+					static_cast<int>(envPanelBounds.x), static_cast<int>(envPanelBounds.y + envPanelBounds.height - 20), FS(18), DARKGRAY);
 			} else {
 				const char* placeholder = "Entorno aun no implementado para esta tarea";
-				int placeholderWidth = MeasureText(placeholder, 20);
+				int placeholderWidth = MeasureText(placeholder, FS(20));
 				DrawText(placeholder,
 					static_cast<int>(envPanelBounds.x + envPanelBounds.width / 2.0f - placeholderWidth / 2.0f),
-					static_cast<int>(envPanelBounds.y + envPanelBounds.height / 2.0f), 20, GRAY);
+					static_cast<int>(envPanelBounds.y + envPanelBounds.height / 2.0f), FS(20), GRAY);
 			}
 
 			float dividerX = networkPanelBounds.x + networkPanelBounds.width + 20;
@@ -646,16 +808,16 @@ int main() {
 			int nextSpeedLevel = (snnSpeedLevel + 1) % SNN_SPEED_LEVEL_COUNT;
 			DrawText(TextFormat("Velocidad: %s (ESPACIO para %s)",
 					SNN_SPEED_LABELS[snnSpeedLevel], SNN_SPEED_LABELS[nextSpeedLevel]),
-				20, 70, 20, DARKGRAY);
+				20, 70, FS(20), DARKGRAY);
 		} else if (menu.getStatus() == VS_AI_RACING_CAR) {
 			aiCarEnv.drawTrack(racePanelBounds);
 			humanCarEnv.drawCar(racePanelBounds, HUMAN_CAR_COLOR, false);
 			aiCarEnv.drawCar(racePanelBounds, AI_CAR_COLOR, true);
 
-			DrawText("Tú (rojo) vs IA (azul)", static_cast<int>(racePanelBounds.x), 90, 22, DARKGRAY);
+			DrawText("Tú (rojo) vs IA (azul)", static_cast<int>(racePanelBounds.x), 90, FS(22), DARKGRAY);
 			DrawText("Flechas o gamepad: arriba/abajo o gatillos acelerar/frenar, izquierda/derecha o stick izquierdo girar",
 				static_cast<int>(racePanelBounds.x),
-				static_cast<int>(racePanelBounds.y + racePanelBounds.height + 8), 18, GRAY);
+				static_cast<int>(racePanelBounds.y + racePanelBounds.height + 8), FS(18), GRAY);
 		} else if (menu.getStatus() == VS_AI_ACROBOT) {
 			// Same start/mid/end sub-step interpolation as "Evaluar red": animate each
 			// pendulum smoothly across the just-taken step's motion for the whole interval
@@ -663,21 +825,21 @@ int main() {
 			double acrobotProgress = raceDiscreteAccumulatorMs / realStepMsForTask(0);
 			humanAcrobotEnv.draw(discreteLeftPanelBounds, acrobotProgress);
 			aiAcrobotEnv.draw(discreteRightPanelBounds, acrobotProgress);
-			DrawText("Tu", static_cast<int>(discreteLeftPanelBounds.x), 95, 20, DARKGRAY);
-			DrawText("IA", static_cast<int>(discreteRightPanelBounds.x), 95, 20, DARKGRAY);
+			DrawText("Tu", static_cast<int>(discreteLeftPanelBounds.x), 95, FS(20), DARKGRAY);
+			DrawText("IA", static_cast<int>(discreteRightPanelBounds.x), 95, FS(20), DARKGRAY);
 			float acrobotDividerX = discreteLeftPanelBounds.x + discreteLeftPanelBounds.width + 20;
 			DrawLineEx({ acrobotDividerX, discreteLeftPanelBounds.y }, { acrobotDividerX, discreteLeftPanelBounds.y + discreteLeftPanelBounds.height }, 1.0f, LIGHTGRAY);
 			DrawText("Manten presionado Izquierda o Derecha para aplicar torque",
-				static_cast<int>(discreteLeftPanelBounds.x), static_cast<int>(discreteLeftPanelBounds.y + discreteLeftPanelBounds.height + 12), 18, GRAY);
+				static_cast<int>(discreteLeftPanelBounds.x), static_cast<int>(discreteLeftPanelBounds.y + discreteLeftPanelBounds.height + 12), FS(18), GRAY);
 		} else if (menu.getStatus() == VS_AI_MOUNTAIN_CAR) {
 			humanMountainCarEnv.draw(discreteLeftPanelBounds);
 			aiMountainCarEnv.draw(discreteRightPanelBounds);
-			DrawText("Tu", static_cast<int>(discreteLeftPanelBounds.x), 95, 20, DARKGRAY);
-			DrawText("IA", static_cast<int>(discreteRightPanelBounds.x), 95, 20, DARKGRAY);
+			DrawText("Tu", static_cast<int>(discreteLeftPanelBounds.x), 95, FS(20), DARKGRAY);
+			DrawText("IA", static_cast<int>(discreteRightPanelBounds.x), 95, FS(20), DARKGRAY);
 			float mcDividerX = discreteLeftPanelBounds.x + discreteLeftPanelBounds.width + 20;
 			DrawLineEx({ mcDividerX, discreteLeftPanelBounds.y }, { mcDividerX, discreteLeftPanelBounds.y + discreteLeftPanelBounds.height }, 1.0f, LIGHTGRAY);
 			DrawText("Manten presionado Izquierda o Derecha para empujar el auto",
-				static_cast<int>(discreteLeftPanelBounds.x), static_cast<int>(discreteLeftPanelBounds.y + discreteLeftPanelBounds.height + 12), 18, GRAY);
+				static_cast<int>(discreteLeftPanelBounds.x), static_cast<int>(discreteLeftPanelBounds.y + discreteLeftPanelBounds.height + 12), FS(18), GRAY);
 		} else if (menu.getStatus() == VS_AI_IRIS) {
 			// The AI's decoded species stays hidden (no highlighted output/legend entry)
 			// until the round is revealed, even if its spike window finishes first --
@@ -698,17 +860,17 @@ int main() {
 			};
 			irisNetwork.setIoDisplay(inputs, outputs, winnerHighlight);
 			irisNetwork.draw(irisLeftPanelBounds);
-			DrawText("Red neuronal (IA)", static_cast<int>(irisLeftPanelBounds.x), 95, 20, DARKGRAY);
+			DrawText("Red neuronal (IA)", static_cast<int>(irisLeftPanelBounds.x), 95, FS(20), DARKGRAY);
 
 			irisRound.draw(irisRightPanelBounds);
-			DrawText("Adivina la flor", static_cast<int>(irisRightPanelBounds.x), 95, 20, DARKGRAY);
+			DrawText("Adivina la flor", static_cast<int>(irisRightPanelBounds.x), 95, FS(20), DARKGRAY);
 
 			float dividerX = irisLeftPanelBounds.x + irisLeftPanelBounds.width + 20;
 			DrawLineEx({ dividerX, irisLeftPanelBounds.y }, { dividerX, irisLeftPanelBounds.y + irisLeftPanelBounds.height }, 1.0f, LIGHTGRAY);
 
 			std::string scoreText = TextFormat("Tu: %d   IA: %d   Racha: %d", irisHumanScore, irisAiScore, irisStreak);
-			int scoreWidth = MeasureText(scoreText.c_str(), 22);
-			DrawText(scoreText.c_str(), SCREEN_WIDTH / 2 - scoreWidth / 2, 60, 22, DARKGRAY);
+			int scoreWidth = MeasureText(scoreText.c_str(), FS(22));
+			DrawText(scoreText.c_str(), SCREEN_WIDTH / 2 - scoreWidth / 2, 60, FS(22), DARKGRAY);
 
 			if (irisPhase == IrisPhase::Deciding) {
 				// Drawn manually (not by Menu::draw()) so they can be hidden once revealed
@@ -723,8 +885,8 @@ int main() {
 				std::string prompt = (irisHumanGuess < 0)
 					? TextFormat("Elegi una especie mientras la red decide... (%.1fs)", elapsedSec)
 					: TextFormat("Elegiste en %.1fs. Esperando a la IA...", elapsedSec);
-				int promptWidth = MeasureText(prompt.c_str(), 18);
-				DrawText(prompt.c_str(), SCREEN_WIDTH / 2 - promptWidth / 2, static_cast<int>(IRIS_TEXT_ROW_Y), 18, GRAY);
+				int promptWidth = MeasureText(prompt.c_str(), FS(18));
+				DrawText(prompt.c_str(), SCREEN_WIDTH / 2 - promptWidth / 2, static_cast<int>(IRIS_TEXT_ROW_Y), FS(18), GRAY);
 			} else {
 				bool humanCorrect = irisHumanGuess == irisRound.trueLabel();
 				bool aiCorrect = irisAiGuess == irisRound.trueLabel();
@@ -732,21 +894,21 @@ int main() {
 					IRIS_SPECIES_NAMES[irisRound.trueLabel()],
 					IRIS_SPECIES_NAMES[irisHumanGuess], humanCorrect ? "(correcto)" : "(incorrecto)", irisHumanDecisionTimeSec,
 					IRIS_SPECIES_NAMES[irisAiGuess], aiCorrect ? "(correcto)" : "(incorrecto)");
-				int revealWidth = MeasureText(reveal.c_str(), 20);
-				DrawText(reveal.c_str(), SCREEN_WIDTH / 2 - revealWidth / 2, static_cast<int>(IRIS_TEXT_ROW_Y), 20,
+				int revealWidth = MeasureText(reveal.c_str(), FS(20));
+				DrawText(reveal.c_str(), SCREEN_WIDTH / 2 - revealWidth / 2, static_cast<int>(IRIS_TEXT_ROW_Y), FS(20),
 					(humanCorrect ? Color{40, 150, 70, 255} : Color{200, 60, 60, 255}));
 				menu.getIrisNextRound().draw(mousePosition);
 			}
 		} else if (menu.getStatus() == LOAD_NETWORK_FILE_MENU) {
 			const std::string& taskLabel = snnTaskCategories()[static_cast<size_t>(selectedTaskCategory)].label;
 			std::string title = "Modelos disponibles: " + taskLabel;
-			int titleWidth = MeasureText(title.c_str(), 24);
-			DrawText(title.c_str(), SCREEN_WIDTH / 2 - titleWidth / 2, 80, 24, DARKGRAY);
+			int titleWidth = MeasureText(title.c_str(), FS(24));
+			DrawText(title.c_str(), SCREEN_WIDTH / 2 - titleWidth / 2, 80, FS(24), DARKGRAY);
 
 			if (modelButtons.empty()) {
 				const char* empty = "No hay modelos guardados para esta tarea todavia.";
-				int emptyWidth = MeasureText(empty, 20);
-				DrawText(empty, SCREEN_WIDTH / 2 - emptyWidth / 2, SCREEN_HEIGHT / 2, 20, GRAY);
+				int emptyWidth = MeasureText(empty, FS(20));
+				DrawText(empty, SCREEN_WIDTH / 2 - emptyWidth / 2, SCREEN_HEIGHT / 2, FS(20), GRAY);
 			}
 			for (Button& button : modelButtons) button.draw(mousePosition);
 		}

@@ -8,6 +8,7 @@
 
 #include "../include/branding.hpp"
 #include "../include/snn_network.hpp"
+#include "../include/ui_scale.hpp"
 
 // Standalone demo (separate binary from NeuroGame): shows the two encoders actually used
 // by the trained WANN models this project loads (see model_browser.cpp's presets) --
@@ -24,8 +25,9 @@
 //          steady-state conductance is enough to cross the Izhikevich threshold.
 
 namespace {
-    constexpr int SCREEN_WIDTH = 1680;
-    constexpr int SCREEN_HEIGHT = 900;
+    // Right half of a 3840x2160 monitor.
+    constexpr int SCREEN_WIDTH = 2160;
+    constexpr int SCREEN_HEIGHT = 3840;
 
     // --- TTFS (ttfsEncoder.cpp, Mapping::LINEAR) ---
     constexpr double TTFS_DURATION_MS = 100.0;
@@ -113,11 +115,15 @@ namespace {
         }
     };
 
+    // Scales a base (1680-wide-reference) pixel size by g_uiScale, rounding to the nearest
+    // integer -- use for every DrawText/MeasureText font-size argument.
+    int FS(float basePx) { return static_cast<int>(std::lround(basePx * g_uiScale)); }
+
     void drawPanelFrame(Rectangle bounds, const std::string& title, const std::string& formula) {
         DrawRectangleRec(bounds, Color{250, 250, 251, 255});
         DrawRectangleLinesEx(bounds, 1.5f, LIGHTGRAY);
-        DrawText(title.c_str(), static_cast<int>(bounds.x + 10), static_cast<int>(bounds.y + 8), 20, DARKGRAY);
-        DrawText(formula.c_str(), static_cast<int>(bounds.x + 10), static_cast<int>(bounds.y + 32), 16, GRAY);
+        DrawText(title.c_str(), static_cast<int>(bounds.x + 10), static_cast<int>(bounds.y + 8), FS(20), DARKGRAY);
+        DrawText(formula.c_str(), static_cast<int>(bounds.x + 10), static_cast<int>(bounds.y + 32), FS(16), GRAY);
     }
 
     void drawTtfsPanel(Rectangle bounds, const std::vector<double>& spikes, const std::vector<float>& flashMs, double cursorTimeMs) {
@@ -126,10 +132,10 @@ namespace {
         Rectangle plot = { bounds.x + 20, bounds.y + 70, bounds.width - 40, bounds.height - 110 };
         float axisY = plot.y + plot.height * 0.5f;
         DrawLineEx({ plot.x, axisY }, { plot.x + plot.width, axisY }, 1.5f, LIGHTGRAY);
-        DrawText("0 ms", static_cast<int>(plot.x), static_cast<int>(plot.y + plot.height + 6), 14, GRAY);
+        DrawText("0 ms", static_cast<int>(plot.x), static_cast<int>(plot.y + plot.height + 6), FS(14), GRAY);
         std::string endLabel = TextFormat("%.0f ms", TTFS_DURATION_MS);
-        int endLabelWidth = MeasureText(endLabel.c_str(), 14);
-        DrawText(endLabel.c_str(), static_cast<int>(plot.x + plot.width) - endLabelWidth, static_cast<int>(plot.y + plot.height + 6), 14, GRAY);
+        int endLabelWidth = MeasureText(endLabel.c_str(), FS(14));
+        DrawText(endLabel.c_str(), static_cast<int>(plot.x + plot.width) - endLabelWidth, static_cast<int>(plot.y + plot.height + 6), FS(14), GRAY);
 
         Color color = Color{60, 110, 220, 255};
         for (size_t i = 0; i < spikes.size(); ++i) {
@@ -140,8 +146,8 @@ namespace {
         }
         if (spikes.empty()) {
             const char* msg = "(sin spike: v esta bajo el umbral o es negativo)";
-            float w = static_cast<float>(MeasureText(msg, 16));
-            DrawText(msg, static_cast<int>(plot.x + plot.width / 2.0f - w / 2.0f), static_cast<int>(axisY - 10), 16, GRAY);
+            float w = static_cast<float>(MeasureText(msg, FS(16)));
+            DrawText(msg, static_cast<int>(plot.x + plot.width / 2.0f - w / 2.0f), static_cast<int>(axisY - 10), FS(16), GRAY);
         }
 
         float cursorX = plot.x + static_cast<float>(cursorTimeMs / TTFS_DURATION_MS) * plot.width;
@@ -173,7 +179,10 @@ namespace {
 }
 
 int main() {
+    g_uiScale = SCREEN_WIDTH / 1680.0f;
+
     InitWindow(SCREEN_WIDTH, SCREEN_HEIGHT, "Codificadores WANN: TTFS y Signed");
+    SetWindowPosition(SCREEN_WIDTH, 0);
     SetTargetFPS(60);
 
     constexpr float MARGIN_X = 40.0f;
@@ -242,11 +251,11 @@ int main() {
 
         ttfsSlider.draw();
         DrawText(TextFormat("Valor TTFS: %.2f", ttfsSlider.value),
-            static_cast<int>(ttfsSlider.track.x), static_cast<int>(ttfsSlider.track.y - 26), 20, DARKGRAY);
+            static_cast<int>(ttfsSlider.track.x), static_cast<int>(ttfsSlider.track.y - 26), FS(20), DARKGRAY);
 
         smallSlider.draw();
         DrawText(TextFormat("Valor Signed: %.2f", smallSlider.value),
-            static_cast<int>(smallSlider.track.x), static_cast<int>(smallSlider.track.y - 26), 20, DARKGRAY);
+            static_cast<int>(smallSlider.track.x), static_cast<int>(smallSlider.track.y - 26), FS(20), DARKGRAY);
 
         DrawSponsorLogos(SCREEN_WIDTH, SCREEN_HEIGHT);
         DrawFondecytCredit(SCREEN_WIDTH, SCREEN_HEIGHT);

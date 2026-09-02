@@ -1,11 +1,15 @@
 #include "../include/button.hpp"
+#include "../include/ui_scale.hpp"
+
+#include <cmath>
 
 /**
  *
- * 
- * @param 
+ *
+ * @param
  */
-Button::Button(Rectangle button, string text) : button(button), text(text), fontSize(20) {}
+Button::Button(Rectangle button, string text)
+    : button(button), text(text), fontSize(static_cast<int>(std::lround(20.0f * g_uiScale))) {}
 
 /**
  *
@@ -33,7 +37,7 @@ void Button::setFontSize(int fontsize) {this->fontSize = fontsize;}
 void Button::draw(Vector2 mousePosition) const {
     bool hovered = CheckCollisionPointRec(mousePosition, button);
     DrawRectangleRec(button, hovered ? LIGHTGRAY : GRAY);
-    DrawRectangleLinesEx(button, 2, DARKGRAY);
+    DrawRectangleLinesEx(button, 2.0f * g_uiScale, DARKGRAY);
 
     int textWidth = MeasureText(text.c_str(), fontSize);
     int textX = static_cast<int>(button.x + (button.width - textWidth) / 2.0f);

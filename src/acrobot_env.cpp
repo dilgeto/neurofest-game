@@ -1,4 +1,5 @@
 #include "../include/acrobot_env.hpp"
+#include "../include/ui_scale.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -145,7 +146,8 @@ void AcrobotEnv::draw(Rectangle bounds, double t) const {
     float targetY = pivot.y - scale;
     Color targetColor = Fade(DARKGRAY, 0.55f);
     drawDashedLineH(bounds.x, bounds.x + bounds.width, targetY, 10.0f, 6.0f, 2.0f, targetColor);
-    DrawText("Altura objetivo", static_cast<int>(bounds.x), static_cast<int>(targetY) - 22, 16, targetColor);
+    DrawText("Altura objetivo", static_cast<int>(bounds.x), static_cast<int>(targetY) - 22,
+        static_cast<int>(std::lround(16.0f * g_uiScale)), targetColor);
 
     double mathX1 = LINK_LENGTH_1 * std::sin(theta1);
     double mathY1 = -LINK_LENGTH_1 * std::cos(theta1);
@@ -162,5 +164,6 @@ void AcrobotEnv::draw(Rectangle bounds, double t) const {
     DrawCircleV(p2, 9.0f, Color{220, 90, 70, 255});
 
     DrawText(TextFormat("Paso episodio: %d / %d", stepCount_, EPISODE_STEP_LIMIT),
-        static_cast<int>(bounds.x), static_cast<int>(bounds.y + bounds.height - 30), 18, DARKGRAY);
+        static_cast<int>(bounds.x), static_cast<int>(bounds.y + bounds.height - 30),
+        static_cast<int>(std::lround(18.0f * g_uiScale)), DARKGRAY);
 }

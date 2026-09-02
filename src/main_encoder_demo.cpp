@@ -6,6 +6,7 @@
 #include <vector>
 
 #include "../include/branding.hpp"
+#include "../include/ui_scale.hpp"
 
 // Standalone demo (separate binary from NeuroGame): shows how 2 of snn-simulator's spike
 // encoders (include/encoding/{ttfs,rate}Encoder.*) turn a single number in [0,1] into a
@@ -16,8 +17,9 @@
 //   Rate: a Bernoulli trial each dt with p = value*maxRate/1000*dt.
 
 namespace {
-    constexpr int SCREEN_WIDTH = 1680;
-    constexpr int SCREEN_HEIGHT = 900;
+    // Right half of a 3840x2160 monitor.
+    constexpr int SCREEN_WIDTH = 2160;
+    constexpr int SCREEN_HEIGHT = 3840;
 
     constexpr double ENCODE_DURATION_MS = 100.0; // window each encoder encodes into
     constexpr double ENCODE_DT_MS = 1.0;
@@ -83,6 +85,10 @@ namespace {
         }
     };
 
+    // Scales a base (1680-wide-reference) pixel size by g_uiScale, rounding to the nearest
+    // integer -- use for every DrawText/MeasureText font-size argument.
+    int FS(float basePx) { return static_cast<int>(std::lround(basePx * g_uiScale)); }
+
     void regenerate(EncoderPanel& panel, std::vector<double> newSpikes) {
         panel.spikes = std::move(newSpikes);
         panel.fired.assign(panel.spikes.size(), false);
@@ -92,17 +98,17 @@ namespace {
     void drawEncoderPanel(Rectangle bounds, const EncoderPanel& panel, double cursorTimeMs) {
         DrawRectangleRec(bounds, Color{250, 250, 251, 255});
         DrawRectangleLinesEx(bounds, 1.5f, LIGHTGRAY);
-        DrawText(panel.title.c_str(), static_cast<int>(bounds.x + 10), static_cast<int>(bounds.y + 8), 20, DARKGRAY);
-        DrawText(panel.formula.c_str(), static_cast<int>(bounds.x + 10), static_cast<int>(bounds.y + 32), 16, GRAY);
+        DrawText(panel.title.c_str(), static_cast<int>(bounds.x + 10), static_cast<int>(bounds.y + 8), FS(20), DARKGRAY);
+        DrawText(panel.formula.c_str(), static_cast<int>(bounds.x + 10), static_cast<int>(bounds.y + 32), FS(16), GRAY);
 
         Rectangle plot = { bounds.x + 20, bounds.y + 70, bounds.width - 40, bounds.height - 110 };
         float axisY = plot.y + plot.height * 0.5f;
 
         DrawLineEx({ plot.x, axisY }, { plot.x + plot.width, axisY }, 1.5f, LIGHTGRAY);
-        DrawText("0 ms", static_cast<int>(plot.x), static_cast<int>(plot.y + plot.height + 6), 14, GRAY);
+        DrawText("0 ms", static_cast<int>(plot.x), static_cast<int>(plot.y + plot.height + 6), FS(14), GRAY);
         std::string endLabel = TextFormat("%.0f ms", ENCODE_DURATION_MS);
-        int endLabelWidth = MeasureText(endLabel.c_str(), 14);
-        DrawText(endLabel.c_str(), static_cast<int>(plot.x + plot.width) - endLabelWidth, static_cast<int>(plot.y + plot.height + 6), 14, GRAY);
+        int endLabelWidth = MeasureText(endLabel.c_str(), FS(14));
+        DrawText(endLabel.c_str(), static_cast<int>(plot.x + plot.width) - endLabelWidth, static_cast<int>(plot.y + plot.height + 6), FS(14), GRAY);
 
         for (size_t i = 0; i < panel.spikes.size(); ++i) {
             float x = plot.x + static_cast<float>(panel.spikes[i] / ENCODE_DURATION_MS) * plot.width;
@@ -116,12 +122,15 @@ namespace {
         DrawLineEx({ cursorX, plot.y - 6.0f }, { cursorX, plot.y + plot.height + 6.0f }, 2.0f, Fade(DARKGRAY, 0.6f));
 
         DrawText(TextFormat("%d spikes", static_cast<int>(panel.spikes.size())),
-            static_cast<int>(bounds.x + bounds.width - 90), static_cast<int>(bounds.y + 8), 16, DARKGRAY);
+            static_cast<int>(bounds.x + bounds.width - 90), static_cast<int>(bounds.y + 8), FS(16), DARKGRAY);
     }
 }
 
 int main() {
+    g_uiScale = SCREEN_WIDTH / 1680.0f;
+
     InitWindow(SCREEN_WIDTH, SCREEN_HEIGHT, "Codificadores: de numero a espigas");
+    SetWindowPosition(SCREEN_WIDTH, 0);
     SetTargetFPS(60);
     std::mt19937 rng(std::random_device{}());
 
@@ -187,7 +196,7 @@ int main() {
 
         valueSlider.draw();
         DrawText(TextFormat("Valor a codificar: %.2f", valueSlider.value),
-            static_cast<int>(valueSlider.track.x), static_cast<int>(valueSlider.track.y - 26), 20, DARKGRAY);
+            static_cast<int>(valueSlider.track.x), static_cast<int>(valueSlider.track.y - 26), FS(20), DARKGRAY);
 
         DrawSponsorLogos(SCREEN_WIDTH, SCREEN_HEIGHT);
         DrawFondecytCredit(SCREEN_WIDTH, SCREEN_HEIGHT);

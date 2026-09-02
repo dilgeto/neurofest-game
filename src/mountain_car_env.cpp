@@ -1,4 +1,5 @@
 #include "../include/mountain_car_env.hpp"
+#include "../include/ui_scale.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -60,5 +61,6 @@ void MountainCarEnv::draw(Rectangle bounds) const {
     DrawCircleV({ carX, carY - 8 }, 10.0f, Color{60, 110, 220, 255});
 
     DrawText(TextFormat("Paso episodio: %d / %d", stepCount_, EPISODE_STEP_LIMIT),
-        static_cast<int>(bounds.x), static_cast<int>(bounds.y + bounds.height - 20), 18, DARKGRAY);
+        static_cast<int>(bounds.x), static_cast<int>(bounds.y + bounds.height - 20),
+        static_cast<int>(std::lround(18.0f * g_uiScale)), DARKGRAY);
 }

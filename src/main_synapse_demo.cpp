@@ -1,6 +1,7 @@
 #include <raylib.h>
 #include <raymath.h>
 #include <algorithm>
+#include <cmath>
 #include <deque>
 #include <functional>
 #include <string>
@@ -9,6 +10,7 @@
 #include "../include/branding.hpp"
 #include "../include/button.hpp"
 #include "../include/snn_network.hpp"
+#include "../include/ui_scale.hpp"
 
 // Standalone demo (separate binary from NeuroGame): shows how a spike travels from a
 // presynaptic neuron to a postsynaptic one, and how that changes the postsynaptic
@@ -18,8 +20,9 @@
 // spike adds the synapse weight to the postsynaptic conductance one tick later).
 
 namespace {
-    constexpr int SCREEN_WIDTH = 1680;
-    constexpr int SCREEN_HEIGHT = 900;
+    // Right half of a 3840x2160 monitor.
+    constexpr int SCREEN_WIDTH = 2160;
+    constexpr int SCREEN_HEIGHT = 3840;
 
     constexpr double SIM_DT_MS = 0.5;         // Izhikevich integration step
     constexpr double SIM_SPEED_FACTOR = 0.1;  // slow real biological time 10x so individual
@@ -52,6 +55,10 @@ namespace {
     const Color PRE_COLOR = Color{60, 110, 220, 255};
     const Color EXC_POST_COLOR = Color{60, 170, 90, 255};
     const Color INH_POST_COLOR = Color{220, 90, 70, 255};
+
+    // Scales a base (1680-wide-reference) pixel size by g_uiScale, rounding to the nearest
+    // integer -- use for every DrawText/MeasureText font-size argument.
+    int FS(float basePx) { return static_cast<int>(std::lround(basePx * g_uiScale)); }
 
     struct Neuron {
         SnnNeuronParams params;
@@ -105,7 +112,7 @@ namespace {
     void drawGraphFrame(Rectangle bounds, const std::string& label, DrawTraces drawTraces) {
         DrawRectangleRec(bounds, Color{250, 250, 251, 255});
         DrawRectangleLinesEx(bounds, 1.5f, LIGHTGRAY);
-        DrawText(label.c_str(), static_cast<int>(bounds.x + 10), static_cast<int>(bounds.y + 8), 18, DARKGRAY);
+        DrawText(label.c_str(), static_cast<int>(bounds.x + 10), static_cast<int>(bounds.y + 8), FS(18), DARKGRAY);
 
         Rectangle plot = { bounds.x + 10, bounds.y + 32, bounds.width - 20, bounds.height - 42 };
 
@@ -147,15 +154,15 @@ namespace {
             drawTrace(plot, valueToY, pair.post, pair.excitatory ? EXC_POST_COLOR : INH_POST_COLOR);
         });
 
-        DrawText("Pre", static_cast<int>(bounds.x + bounds.width - 90), static_cast<int>(bounds.y + 8), 16, PRE_COLOR);
-        DrawText("Post", static_cast<int>(bounds.x + bounds.width - 50), static_cast<int>(bounds.y + 8), 16,
+        DrawText("Pre", static_cast<int>(bounds.x + bounds.width - 90), static_cast<int>(bounds.y + 8), FS(16), PRE_COLOR);
+        DrawText("Post", static_cast<int>(bounds.x + bounds.width - 50), static_cast<int>(bounds.y + 8), FS(16),
             pair.excitatory ? EXC_POST_COLOR : INH_POST_COLOR);
     }
 
     void drawDiagram(Rectangle bounds, const SynapsePair& pair) {
         DrawRectangleRec(bounds, Color{250, 250, 251, 255});
         DrawRectangleLinesEx(bounds, 1.5f, LIGHTGRAY);
-        DrawText(pair.title.c_str(), static_cast<int>(bounds.x + 10), static_cast<int>(bounds.y + 8), 18, DARKGRAY);
+        DrawText(pair.title.c_str(), static_cast<int>(bounds.x + 10), static_cast<int>(bounds.y + 8), FS(18), DARKGRAY);
 
         Vector2 preCenter = { bounds.x + bounds.width * 0.30f, bounds.y + bounds.height * 0.58f };
         Vector2 postCenter = { bounds.x + bounds.width * 0.70f, bounds.y + bounds.height * 0.58f };
@@ -192,13 +199,16 @@ namespace {
         DrawCircleLines(static_cast<int>(preCenter.x), static_cast<int>(preCenter.y), 18.0f, DARKGRAY);
         DrawCircleLines(static_cast<int>(postCenter.x), static_cast<int>(postCenter.y), 18.0f, DARKGRAY);
 
-        DrawText("Pre", static_cast<int>(preCenter.x - 15), static_cast<int>(preCenter.y + 26), 16, GRAY);
-        DrawText("Post", static_cast<int>(postCenter.x - 17), static_cast<int>(postCenter.y + 26), 16, GRAY);
+        DrawText("Pre", static_cast<int>(preCenter.x - 15), static_cast<int>(preCenter.y + 26), FS(16), GRAY);
+        DrawText("Post", static_cast<int>(postCenter.x - 17), static_cast<int>(postCenter.y + 26), FS(16), GRAY);
     }
 }
 
 int main() {
+    g_uiScale = SCREEN_WIDTH / 1680.0f;
+
     InitWindow(SCREEN_WIDTH, SCREEN_HEIGHT, "Transporte de spikes: sinapsis excitatoria vs inhibitoria");
+    SetWindowPosition(SCREEN_WIDTH, 0);
     SetTargetFPS(60);
 
     std::vector<SynapsePair> pairs;

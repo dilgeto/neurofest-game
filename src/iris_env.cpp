@@ -1,4 +1,5 @@
 #include "../include/iris_env.hpp"
+#include "../include/ui_scale.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -49,7 +50,7 @@ std::array<double, 4> IrisEnv::observe() const {
 }
 
 void IrisEnv::draw(Rectangle bounds) const {
-    const int FONT = 18;
+    const int FONT = static_cast<int>(std::lround(18.0f * g_uiScale));
     DrawText(TextFormat("Sepalo: %.1f x %.1f cm", sample_.sepalLength, sample_.sepalWidth),
         static_cast<int>(bounds.x), static_cast<int>(bounds.y), FONT, DARKGRAY);
     DrawText(TextFormat("Petalo: %.1f x %.1f cm", sample_.petalLength, sample_.petalWidth),

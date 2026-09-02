@@ -1,10 +1,12 @@
 #include <raylib.h>
 #include <algorithm>
+#include <cmath>
 #include <random>
 #include <string>
 #include <vector>
 
 #include "../include/branding.hpp"
+#include "../include/ui_scale.hpp"
 
 // Standalone demo (separate binary from NeuroGame): shows how the two discrete decoders
 // used by this project's WANN models (see rlDecoder.cpp's RLDecoder::decodeDiscreteAction)
@@ -18,8 +20,9 @@
 //                 The leader can keep changing until the window closes.
 
 namespace {
-    constexpr int SCREEN_WIDTH = 1680;
-    constexpr int SCREEN_HEIGHT = 900;
+    // Right half of a 3840x2160 monitor.
+    constexpr int SCREEN_WIDTH = 2160;
+    constexpr int SCREEN_HEIGHT = 3840;
     constexpr int NUM_CHANNELS = 3;
 
     constexpr double WINDOW_MS = 100.0;
@@ -81,10 +84,14 @@ namespace {
         }
     };
 
+    // Scales a base (1680-wide-reference) pixel size by g_uiScale, rounding to the nearest
+    // integer -- use for every DrawText/MeasureText font-size argument.
+    int FS(float basePx) { return static_cast<int>(std::lround(basePx * g_uiScale)); }
+
     void drawChannelRow(Rectangle bounds, const Channel& channel, double cursorTimeMs) {
         DrawRectangleRec(bounds, Color{250, 250, 251, 255});
         DrawRectangleLinesEx(bounds, 1.5f, LIGHTGRAY);
-        DrawText(channel.label.c_str(), static_cast<int>(bounds.x + 10), static_cast<int>(bounds.y + 8), 18, DARKGRAY);
+        DrawText(channel.label.c_str(), static_cast<int>(bounds.x + 10), static_cast<int>(bounds.y + 8), FS(18), DARKGRAY);
 
         Rectangle plot = { bounds.x + 20, bounds.y + 8, bounds.width - 40, bounds.height - 16 };
         float axisY = plot.y + plot.height * 0.5f;
@@ -100,38 +107,41 @@ namespace {
         DrawLineEx({ cursorX, bounds.y + 2.0f }, { cursorX, bounds.y + bounds.height - 2.0f }, 2.0f, Fade(DARKGRAY, 0.6f));
 
         DrawText(TextFormat("%d", static_cast<int>(channel.spikes.size())),
-            static_cast<int>(bounds.x + bounds.width - 30), static_cast<int>(bounds.y + 8), 18, DARKGRAY);
+            static_cast<int>(bounds.x + bounds.width - 30), static_cast<int>(bounds.y + 8), FS(18), DARKGRAY);
     }
 
     void drawVerdictPanel(Rectangle bounds, const std::string& title, const std::string& formula,
                            int winner, const std::vector<Channel>& channels, const std::string& detail) {
         DrawRectangleRec(bounds, Color{250, 250, 251, 255});
         DrawRectangleLinesEx(bounds, 1.5f, LIGHTGRAY);
-        DrawText(title.c_str(), static_cast<int>(bounds.x + 10), static_cast<int>(bounds.y + 8), 20, DARKGRAY);
-        DrawText(formula.c_str(), static_cast<int>(bounds.x + 10), static_cast<int>(bounds.y + 32), 15, GRAY);
+        DrawText(title.c_str(), static_cast<int>(bounds.x + 10), static_cast<int>(bounds.y + 8), FS(20), DARKGRAY);
+        DrawText(formula.c_str(), static_cast<int>(bounds.x + 10), static_cast<int>(bounds.y + 32), FS(15), GRAY);
 
         Vector2 badgeCenter = { bounds.x + bounds.width / 2.0f, bounds.y + bounds.height * 0.55f };
         if (winner < 0) {
             DrawCircleLines(static_cast<int>(badgeCenter.x), static_cast<int>(badgeCenter.y), 26.0f, GRAY);
             const char* msg = "Sin decidir";
-            int w = MeasureText(msg, 18);
-            DrawText(msg, static_cast<int>(badgeCenter.x - w / 2.0f), static_cast<int>(badgeCenter.y + 34), 18, GRAY);
+            int w = MeasureText(msg, FS(18));
+            DrawText(msg, static_cast<int>(badgeCenter.x - w / 2.0f), static_cast<int>(badgeCenter.y + 34), FS(18), GRAY);
         } else {
             DrawCircleV(badgeCenter, 26.0f, channels[static_cast<size_t>(winner)].color);
             DrawCircleLines(static_cast<int>(badgeCenter.x), static_cast<int>(badgeCenter.y), 26.0f, DARKGRAY);
             std::string msg = "Gana: " + channels[static_cast<size_t>(winner)].label;
-            int w = MeasureText(msg.c_str(), 18);
-            DrawText(msg.c_str(), static_cast<int>(badgeCenter.x - w / 2.0f), static_cast<int>(badgeCenter.y + 34), 18, DARKGRAY);
+            int w = MeasureText(msg.c_str(), FS(18));
+            DrawText(msg.c_str(), static_cast<int>(badgeCenter.x - w / 2.0f), static_cast<int>(badgeCenter.y + 34), FS(18), DARKGRAY);
         }
 
-        int detailWidth = MeasureText(detail.c_str(), 15);
+        int detailWidth = MeasureText(detail.c_str(), FS(15));
         DrawText(detail.c_str(), static_cast<int>(bounds.x + bounds.width / 2.0f - detailWidth / 2.0f),
-            static_cast<int>(bounds.y + bounds.height - 24), 15, GRAY);
+            static_cast<int>(bounds.y + bounds.height - 24), FS(15), GRAY);
     }
 }
 
 int main() {
+    g_uiScale = SCREEN_WIDTH / 1680.0f;
+
     InitWindow(SCREEN_WIDTH, SCREEN_HEIGHT, "Decodificadores: First Spike vs Rate/Argmax");
+    SetWindowPosition(SCREEN_WIDTH, 0);
     SetTargetFPS(60);
     std::mt19937 rng(std::random_device{}());
 
@@ -234,7 +244,7 @@ int main() {
             sliders[static_cast<size_t>(i)].draw(CHANNEL_COLORS[i]);
             DrawText(TextFormat("Canal %d: %.2f", i, sliders[static_cast<size_t>(i)].value),
                 static_cast<int>(sliders[static_cast<size_t>(i)].track.x),
-                static_cast<int>(sliders[static_cast<size_t>(i)].track.y - 26), 18, DARKGRAY);
+                static_cast<int>(sliders[static_cast<size_t>(i)].track.y - 26), FS(18), DARKGRAY);
         }
 
         DrawSponsorLogos(SCREEN_WIDTH, SCREEN_HEIGHT);
