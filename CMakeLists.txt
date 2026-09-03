@@ -92,3 +92,21 @@ add_executable(DecoderDemo
 
 target_include_directories(DecoderDemo PRIVATE include)
 target_link_libraries(DecoderDemo PRIVATE raylib)
+
+# Standalone demo: runs a live WANN (Weight Agnostic Neural Network) evolution against a
+# small 2D classification task and animates population, champion topology and fitness
+# automatically (see src/main_wann_evolution_demo.cpp). Ind.cpp/Wann.cpp/NsgaSort.cpp are
+# an unmodified vendored copy of the real algorithm from ../wann-cpp (include/wann/), minus
+# the JSON hyperparameter loader (Hyperparams.h here is a trimmed struct-only copy) so this
+# target has no dependency beyond raylib and the STL.
+add_executable(WannEvolutionDemo
+    src/main_wann_evolution_demo.cpp
+    src/Ind.cpp
+    src/Wann.cpp
+    src/NsgaSort.cpp
+    src/button.cpp
+    src/branding.cpp
+)
+
+target_include_directories(WannEvolutionDemo PRIVATE include)
+target_link_libraries(WannEvolutionDemo PRIVATE raylib)

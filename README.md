@@ -4,6 +4,7 @@
 - Patrones de Izhikevich
 - Sinapsis Excitatorias vs Inhibitorias
 - Encoders
+- Neuroevolucion WANN (WannEvolutionDemo)
 ## Requerimientos
 - Raylib
 - CMake
