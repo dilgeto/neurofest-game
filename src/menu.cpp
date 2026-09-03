@@ -1,4 +1,5 @@
 #include <raylib.h>
+#include "../include/branding.hpp"
 #include "../include/menu.hpp"
 #include "../include/ui_scale.hpp"
 
@@ -28,6 +29,15 @@ namespace {
     // The small, top-left-anchored "Volver" button shared by every non-main-menu screen.
     Rectangle backButtonRect() {
         return { 20.0f * g_uiScale, 20.0f * g_uiScale, 140.0f * g_uiScale, 40.0f * g_uiScale };
+    }
+
+    // Top of the square Izquierda/Derecha action buttons: clears DrawSponsorLogos/
+    // DrawFondecytCredit at the bottom instead of the old fixed 130px, which no longer does
+    // now that both got bigger.
+    float actionButtonTop(float screenHeight) {
+        constexpr float BUTTON_SIZE = 100.0f;
+        constexpr float PADDING = 20.0f;
+        return screenHeight - BrandingFooterHeight() - (PADDING + BUTTON_SIZE) * g_uiScale;
     }
 }
 
@@ -62,8 +72,8 @@ Menu::Menu(float screenWitdh, float screenHeight) :
     backFromVsAiAcrobot(backButtonRect(), "Volver"),
     backFromVsAiMountainCar(backButtonRect(), "Volver"),
     // Square, no text -- main.cpp draws a direction arrow on top of each instead.
-    leftActionButton({screenWitdh / 2.0f - 110.0f * g_uiScale, screenHeight - 130.0f * g_uiScale, 100.0f * g_uiScale, 100.0f * g_uiScale}, ""),
-    rightActionButton({screenWitdh / 2.0f + 10.0f * g_uiScale, screenHeight - 130.0f * g_uiScale, 100.0f * g_uiScale, 100.0f * g_uiScale}, ""),
+    leftActionButton({screenWitdh / 2.0f - 110.0f * g_uiScale, actionButtonTop(screenHeight), 100.0f * g_uiScale, 100.0f * g_uiScale}, ""),
+    rightActionButton({screenWitdh / 2.0f + 10.0f * g_uiScale, actionButtonTop(screenHeight), 100.0f * g_uiScale, 100.0f * g_uiScale}, ""),
     // VS AI: Iris -- 3 species buttons in a centered row; "Siguiente flor" shares the
     // same row (only one of the two groups is ever drawn at a time, by main.cpp, based
     // on round phase). Row y (620, scaled) must stay in sync with IRIS_BUTTONS_ROW_Y in

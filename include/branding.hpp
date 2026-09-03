@@ -12,3 +12,11 @@ void DrawSponsorLogos(float screenWidth, float screenHeight);
 // anchored to the bottom-left corner, mirroring DrawSponsorLogos on the opposite side. Call
 // once per frame alongside it, right before EndDrawing().
 void DrawFondecytCredit(float screenWidth, float screenHeight);
+
+// Vertical space (in the same g_uiScale-scaled pixels DrawSponsorLogos/DrawFondecytCredit
+// already draw in) that the footer occupies at the bottom of the window -- the taller of the
+// logo row and the Fondecyt text block, plus its margin. Callers laying out their own
+// content (panel heights, bottom-anchored buttons) should reserve at least this much so
+// nothing renders underneath/collides with the footer. Only meaningful after g_uiScale has
+// been set for the current window.
+float BrandingFooterHeight();

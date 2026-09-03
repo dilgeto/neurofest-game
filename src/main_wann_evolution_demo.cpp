@@ -229,7 +229,7 @@ namespace {
 int main() {
     g_uiScale = SCREEN_WIDTH / 1680.0f;
 
-    InitWindow(SCREEN_WIDTH, SCREEN_HEIGHT, "Neuroevolucion WANN");
+    InitWindow(SCREEN_WIDTH, SCREEN_HEIGHT, "Neuroevolución WANN");
     SetTargetFPS(60);
 
     std::mt19937 seedRng(std::random_device{}());
@@ -353,8 +353,12 @@ int main() {
     constexpr float TOP_BAR_H  = 76.0f;
     constexpr float CONTROLS_H = 74.0f;
 
+    // Bottom clearance is BrandingFooterHeight() (not the plain MARGIN used on the other
+    // three sides) so the controls row clears DrawSponsorLogos/DrawFondecytCredit -- the
+    // flat 28px MARGIN doesn't any more now that both got bigger.
+    const float bottomMargin  = BrandingFooterHeight();
     const float contentTop    = MARGIN + TOP_BAR_H + GAP;
-    const float contentBottom = SCREEN_HEIGHT - MARGIN - CONTROLS_H - GAP;
+    const float contentBottom = SCREEN_HEIGHT - bottomMargin - CONTROLS_H - GAP;
     const float contentLeft   = MARGIN;
     const float contentWidth  = SCREEN_WIDTH - 2.0f * MARGIN;
     const float contentHeight = contentBottom - contentTop;
@@ -371,7 +375,7 @@ int main() {
     constexpr float CONTROL_GAP = 46.0f;
     float controlsWidth = BUTTON_WIDTH + CONTROL_GAP + SLIDER_WIDTH + CONTROL_GAP + BUTTON_WIDTH;
     float controlsLeft = (SCREEN_WIDTH - controlsWidth) / 2.0f;
-    float controlsTop = SCREEN_HEIGHT - MARGIN - CONTROLS_H;
+    float controlsTop = SCREEN_HEIGHT - bottomMargin - CONTROLS_H;
 
     Button playPauseButton({ controlsLeft, controlsTop + 20.0f, BUTTON_WIDTH, 44.0f }, "Pausar");
     Button resetButton({ controlsLeft + BUTTON_WIDTH + CONTROL_GAP + SLIDER_WIDTH + CONTROL_GAP, controlsTop + 20.0f, BUTTON_WIDTH, 44.0f }, "Reiniciar");
@@ -441,14 +445,14 @@ int main() {
         ClearBackground(RAYWHITE);
 
         // --- Title / stats bar ---
-        const char* title = "Neuroevolucion WANN: aprendiendo a clasificar";
+        const char* title = "Neuroevolución WANN: aprendiendo a clasificar";
         DrawText(title, static_cast<int>(MARGIN), static_cast<int>(MARGIN - 4), FS(24), DARKGRAY);
         DrawText(TextFormat("Gen %d", generation), static_cast<int>(MARGIN), static_cast<int>(MARGIN + 30), FS(18), DARKGRAY);
         DrawText(TextFormat("Mejor: %.0f%%", bestFitness * 100.0), static_cast<int>(MARGIN + 140 * g_uiScale), static_cast<int>(MARGIN + 30), FS(18), DARKGRAY);
         DrawText(TextFormat("Promedio: %.0f%%", meanFitness * 100.0), static_cast<int>(MARGIN + 300 * g_uiScale), static_cast<int>(MARGIN + 30), FS(18), DARKGRAY);
-        DrawText(TextFormat("Conexiones (campeon): %d", championLayout.nEnabledConns), static_cast<int>(MARGIN + 520 * g_uiScale), static_cast<int>(MARGIN + 30), FS(18), DARKGRAY);
+        DrawText(TextFormat("Conexiones (campeón): %d", championLayout.nEnabledConns), static_cast<int>(MARGIN + 520 * g_uiScale), static_cast<int>(MARGIN + 30), FS(18), DARKGRAY);
         if (solved) {
-            const char* msg = "Poblacion resuelta -- reiniciando...";
+            const char* msg = "Población resuelta -- reiniciando...";
             int mw = MeasureText(msg, FS(20));
             DrawText(msg, SCREEN_WIDTH - static_cast<int>(MARGIN) - mw, static_cast<int>(MARGIN + 12), FS(20), Color{34, 140, 60, 255});
         }
@@ -456,7 +460,7 @@ int main() {
         // ================= Panel: champion network =================
         DrawRectangleRec(networkPanel, Color{250, 250, 251, 255});
         DrawRectangleLinesEx(networkPanel, 1.5f, LIGHTGRAY);
-        DrawText("Red del campeon (mutaciones nuevas destellan)", static_cast<int>(networkPanel.x + 10), static_cast<int>(networkPanel.y + 6), FS(15), DARKGRAY);
+        DrawText("Red del campeón (mutaciones nuevas destellan)", static_cast<int>(networkPanel.x + 10), static_cast<int>(networkPanel.y + 6), FS(15), DARKGRAY);
 
         {
             Rectangle plot = { networkPanel.x + 20, networkPanel.y + 30, networkPanel.width - 40, networkPanel.height - 66 };
@@ -528,7 +532,7 @@ int main() {
         // ================= Panel: decision boundary =================
         DrawRectangleRec(boundaryPanel, Color{250, 250, 251, 255});
         DrawRectangleLinesEx(boundaryPanel, 1.5f, LIGHTGRAY);
-        DrawText("Frontera de decision (fondo = prediccion, puntos = etiqueta real)",
+        DrawText("Frontera de decisión (fondo = predicción, puntos = etiqueta real)",
                  static_cast<int>(boundaryPanel.x + 10), static_cast<int>(boundaryPanel.y + 6), FS(15), DARKGRAY);
         {
             float side = std::min(boundaryPanel.width - 40.0f, boundaryPanel.height - 56.0f);
@@ -548,7 +552,7 @@ int main() {
         // ================= Panel: population grid =================
         DrawRectangleRec(popPanel, Color{250, 250, 251, 255});
         DrawRectangleLinesEx(popPanel, 1.5f, LIGHTGRAY);
-        DrawText("Poblacion completa (color = fitness de cada individuo)",
+        DrawText("Población completa (color = fitness de cada individuo)",
                  static_cast<int>(popPanel.x + 10), static_cast<int>(popPanel.y + 6), FS(15), DARKGRAY);
         {
             Rectangle plot = { popPanel.x + 18, popPanel.y + 30, popPanel.width - 36, popPanel.height - 62 };

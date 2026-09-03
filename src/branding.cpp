@@ -1,4 +1,5 @@
 #include <raylib.h>
+#include <algorithm>
 #include <cmath>
 #include "../include/branding.hpp"
 #include "../include/ui_scale.hpp"
@@ -20,9 +21,9 @@ namespace {
 
     // Base (unscaled) sizes -- multiplied by g_uiScale at draw time below, since g_uiScale
     // is only set once main() knows SCREEN_WIDTH.
-    constexpr float BASE_LOGO_HEIGHT = 60.0f; // on-screen height each logo is scaled to
-    constexpr float BASE_LOGO_GAP = 12.0f;    // horizontal gap between logos
-    constexpr float BASE_MARGIN = 16.0f;      // distance from the screen's bottom-right corner
+    constexpr float BASE_LOGO_HEIGHT = 110.0f; // on-screen height each logo is scaled to
+    constexpr float BASE_LOGO_GAP = 20.0f;     // horizontal gap between logos
+    constexpr float BASE_MARGIN = 20.0f;       // distance from the screen's bottom-right corner
 }
 
 void DrawSponsorLogos(float screenWidth, float screenHeight) {
@@ -52,20 +53,35 @@ void DrawSponsorLogos(float screenWidth, float screenHeight) {
     }
 }
 
+namespace {
+    // Wrapped narrower than one long line so it doesn't reach into the sponsor logos' corner
+    // on the opposite side, even on the narrowest window this project uses (NeuroGame's
+    // 1920px) -- a single ~70-character line at this font size runs well past that.
+    constexpr const char* FONDECYT_LINES[] = {
+        "Fondecyt Regular 1251455",
+        "NeuroMetaEvo: Integrating Metaheuristic",
+        "Techniques with Neuroscience for Advanced",
+        "Neuromorphic Algorithm Design",
+    };
+    constexpr int FONDECYT_LINE_COUNT = 4;
+}
+
 void DrawFondecytCredit(float screenWidth, float screenHeight) {
     (void)screenWidth;
-    int font = static_cast<int>(std::lround(14.0f * g_uiScale));
-    float margin = 16.0f * g_uiScale;
-    float lineGap = 16.0f * g_uiScale;
-    constexpr const char* LINES[] = {
-        "Fondecyt Regular 1251455",
-        "NeuroMetaEvo: Integrating Metaheuristic Techniques with Neuroscience",
-        "for Advanced Neuromorphic Algorithm Design",
-    };
-    constexpr int LINE_COUNT = 3;
+    int font = static_cast<int>(std::lround(24.0f * g_uiScale));
+    float margin = 20.0f * g_uiScale;
+    float lineGap = 28.0f * g_uiScale;
 
-    float y = screenHeight - margin - LINE_COUNT * lineGap;
-    for (int i = 0; i < LINE_COUNT; ++i) {
-        DrawText(LINES[i], static_cast<int>(margin), static_cast<int>(y + i * lineGap), font, Fade(DARKGRAY, 0.8f));
+    float y = screenHeight - margin - FONDECYT_LINE_COUNT * lineGap;
+    for (int i = 0; i < FONDECYT_LINE_COUNT; ++i) {
+        DrawText(FONDECYT_LINES[i], static_cast<int>(margin), static_cast<int>(y + i * lineGap), font, Fade(DARKGRAY, 0.8f));
     }
+}
+
+float BrandingFooterHeight() {
+    float logoHeight = BASE_LOGO_HEIGHT * g_uiScale;
+    float lineGap = 28.0f * g_uiScale;
+    float textHeight = FONDECYT_LINE_COUNT * lineGap;
+    float margin = 20.0f * g_uiScale; // matches BASE_MARGIN / DrawFondecytCredit's margin
+    return std::max(logoHeight, textHeight) + margin;
 }

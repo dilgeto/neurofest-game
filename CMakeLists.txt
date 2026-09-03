@@ -19,6 +19,7 @@ FetchContent_MakeAvailable(raylib)
 add_executable(NeuroGame
     src/main.cpp
     src/menu.cpp
+    src/gamepad_setup.cpp
     src/button.cpp
     src/snn_network.cpp
     src/model_browser.cpp
@@ -32,11 +33,12 @@ add_executable(NeuroGame
 target_include_directories(NeuroGame PRIVATE include)
 target_link_libraries(NeuroGame PRIVATE raylib)
 
-# Standalone demo: animates the 6 Izhikevich neuron behaviors under a shared, adjustable
-# DC current (see src/main_izhikevich.cpp). Reuses button.cpp and snn_network.cpp's
-# neuron-parameter table, but is otherwise independent of the NeuroGame app/menu.
+# Standalone demo: animates the 6 Izhikevich neuron behaviors under a shared, adjustable DC
+# current. main_izhikevich.cpp is now a thin wrapper around izhikevich_module.cpp, which
+# MultiDemo also links against.
 add_executable(IzhikevichDemo
     src/main_izhikevich.cpp
+    src/izhikevich_module.cpp
     src/button.cpp
     src/snn_network.cpp
     src/branding.cpp
@@ -45,11 +47,12 @@ add_executable(IzhikevichDemo
 target_include_directories(IzhikevichDemo PRIVATE include)
 target_link_libraries(IzhikevichDemo PRIVATE raylib)
 
-# Standalone demo: shows spike transport and postsynaptic voltage for one excitatory and
-# one inhibitory neuron pair (see src/main_synapse_demo.cpp). Reuses snn_network.cpp's
-# neuron-parameter table and button.cpp for the separated/merged view toggle.
+# Standalone demo: shows spike transport and postsynaptic voltage for one excitatory and one
+# inhibitory neuron pair. main_synapse_demo.cpp is now a thin wrapper around
+# synapse_module.cpp, which MultiDemo also links against.
 add_executable(SynapseDemo
     src/main_synapse_demo.cpp
+    src/synapse_module.cpp
     src/button.cpp
     src/snn_network.cpp
     src/branding.cpp
@@ -58,12 +61,13 @@ add_executable(SynapseDemo
 target_include_directories(SynapseDemo PRIVATE include)
 target_link_libraries(SynapseDemo PRIVATE raylib)
 
-# Standalone demo: shows how 4 spike encoders (TTFS linear/logarithmic, Rate, Poisson)
-# turn a single number into a spike train (see src/main_encoder_demo.cpp). Formulas are
-# reimplemented locally (verified against snn-simulator/src/encoding/*), so this target
-# has no dependency on the rest of NeuroGame beyond raylib itself.
+# Standalone demo: shows how 2 spike encoders (TTFS linear, Rate) turn a single number into a
+# spike train. Formulas are reimplemented locally (verified against
+# snn-simulator/src/encoding/*). main_encoder_demo.cpp is now a thin wrapper around
+# encoder_module.cpp, which MultiDemo also links against.
 add_executable(EncoderDemo
     src/main_encoder_demo.cpp
+    src/encoder_module.cpp
     src/branding.cpp
 )
 
@@ -71,10 +75,12 @@ target_include_directories(EncoderDemo PRIVATE include)
 target_link_libraries(EncoderDemo PRIVATE raylib)
 
 # Standalone demo: shows the two encoders actually used by this project's trained WANN
-# models -- TTFS and SMALL/signed -- as opposed to EncoderDemo's generic textbook survey
-# (see src/main_encoder_demo_wann.cpp). Reuses snn_network.cpp's neuron-parameter table.
+# models -- TTFS and SMALL/signed -- as opposed to EncoderDemo's generic textbook survey.
+# main_encoder_demo_wann.cpp is now a thin wrapper around encoder_wann_module.cpp, which
+# MultiDemo also links against.
 add_executable(EncoderDemoWANN
     src/main_encoder_demo_wann.cpp
+    src/encoder_wann_module.cpp
     src/snn_network.cpp
     src/branding.cpp
 )
@@ -84,9 +90,11 @@ target_link_libraries(EncoderDemoWANN PRIVATE raylib)
 
 # Standalone demo: shows how the FIRST_SPIKE and RATE_ARGMAX decoders (rlDecoder.cpp's
 # RLDecoder::decodeDiscreteAction) pick a winner among several channels' spike trains, and
-# how they can disagree given the exact same spikes (see src/main_decoder_demo.cpp).
+# how they can disagree given the exact same spikes. main_decoder_demo.cpp is now a thin
+# wrapper around decoder_module.cpp, which MultiDemo also links against.
 add_executable(DecoderDemo
     src/main_decoder_demo.cpp
+    src/decoder_module.cpp
     src/branding.cpp
 )
 
@@ -110,3 +118,34 @@ add_executable(WannEvolutionDemo
 
 target_include_directories(WannEvolutionDemo PRIVATE include)
 target_link_libraries(WannEvolutionDemo PRIVATE raylib)
+
+# Combines 2 or 3 of NeuroGame/the standalone demos' modules into one window at once, stacked
+# vertically, picked from a small selector screen (see src/main_multi_demo.cpp and
+# include/demo_module.hpp). Links every demo's extracted module .cpp -- the same ones each
+# standalone binary wraps, plus NeuroGame's "Evaluar red" (x3, one per task) and "VS IA" (x4)
+# modules -- so there is exactly one copy of each demo's logic.
+add_executable(MultiDemo
+    src/main_multi_demo.cpp
+    src/gamepad_setup.cpp
+    src/izhikevich_module.cpp
+    src/synapse_module.cpp
+    src/encoder_module.cpp
+    src/encoder_wann_module.cpp
+    src/decoder_module.cpp
+    src/network_view_module.cpp
+    src/vs_ai_discrete_module.cpp
+    src/vs_ai_racing_car_module.cpp
+    src/vs_ai_iris_module.cpp
+    src/task_common.cpp
+    src/model_browser.cpp
+    src/acrobot_env.cpp
+    src/mountain_car_env.cpp
+    src/car_env.cpp
+    src/iris_env.cpp
+    src/button.cpp
+    src/snn_network.cpp
+    src/branding.cpp
+)
+
+target_include_directories(MultiDemo PRIVATE include)
+target_link_libraries(MultiDemo PRIVATE raylib)

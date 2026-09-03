@@ -51,10 +51,11 @@ std::array<double, 4> IrisEnv::observe() const {
 
 void IrisEnv::draw(Rectangle bounds) const {
     const int FONT = static_cast<int>(std::lround(18.0f * g_uiScale));
-    DrawText(TextFormat("Sepalo: %.1f x %.1f cm", sample_.sepalLength, sample_.sepalWidth),
+    DrawText(TextFormat("Sépalo: %.1f x %.1f cm", sample_.sepalLength, sample_.sepalWidth),
         static_cast<int>(bounds.x), static_cast<int>(bounds.y), FONT, DARKGRAY);
-    DrawText(TextFormat("Petalo: %.1f x %.1f cm", sample_.petalLength, sample_.petalWidth),
+    DrawText(TextFormat("Pétalo: %.1f x %.1f cm", sample_.petalLength, sample_.petalWidth),
         static_cast<int>(bounds.x), static_cast<int>(bounds.y + FONT + 6), FONT, DARKGRAY);
+
 
     Vector2 center = { bounds.x + bounds.width / 2.0f, bounds.y + bounds.height * 0.58f };
     // Each petal/sepal chain walks from the center out to 2*radiusA (drawPetal's

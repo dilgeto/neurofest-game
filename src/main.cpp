@@ -9,6 +9,7 @@
 #include "../include/acrobot_env.hpp"
 #include "../include/branding.hpp"
 #include "../include/car_env.hpp"
+#include "../include/gamepad_setup.hpp"
 #include "../include/iris_env.hpp"
 #include "../include/menu.hpp"
 #include "../include/model_browser.hpp"
@@ -17,9 +18,9 @@
 #include "../include/ui_scale.hpp"
 
 // Screen dimensions
-// Right half of a 3840x2160 monitor.
-#define SCREEN_WIDTH 2160
-#define SCREEN_HEIGHT 3840
+// Full 3840x2160 monitor, rotated to portrait -- fills it via FLAG_FULLSCREEN_MODE below.
+#define SCREEN_WIDTH 1920
+#define SCREEN_HEIGHT 1080
 
 // Scales a base (1680-wide-reference) pixel size by g_uiScale, rounding to the nearest
 // integer -- use for every DrawText/MeasureText font-size argument and any other fixed pixel
@@ -133,7 +134,7 @@ static void updateSnnIoDisplay(SnnNetwork& net, int taskCategory, const AcrobotE
 	} else if (taskCategory == 1) {
 		std::array<double, 2> obs = mountainCarEnv.observe();
 		std::vector<SnnIoEntry> inputs = {
-			{"Posicion", TextFormat("%.2f", obs[0])},
+			{"Posición", TextFormat("%.2f", obs[0])},
 			{"Velocidad", TextFormat("%.3f", obs[1])},
 		};
 		int winner = static_cast<int>(std::lround(pendingAction + 1.0));
@@ -146,9 +147,9 @@ static void updateSnnIoDisplay(SnnNetwork& net, int taskCategory, const AcrobotE
 	} else if (taskCategory == 2) {
 		std::array<double, 9> obs = carEnv.observe();
 		std::vector<SnnIoEntry> inputs = {
-			{"Posicion X", TextFormat("%.2f m", obs[0])},
-			{"Posicion Y", TextFormat("%.2f m", obs[1])},
-			{"Orientacion", TextFormat("%.2f rad", obs[2])},
+			{"Posición X", TextFormat("%.2f m", obs[0])},
+			{"Posición Y", TextFormat("%.2f m", obs[1])},
+			{"Orientación", TextFormat("%.2f rad", obs[2])},
 			{"Vel. X", TextFormat("%.2f m/s", obs[3])},
 			{"Vel. Y", TextFormat("%.2f m/s", obs[4])},
 			{"Vel. angular", TextFormat("%.2f rad/s", obs[5])},
@@ -158,7 +159,7 @@ static void updateSnnIoDisplay(SnnNetwork& net, int taskCategory, const AcrobotE
 		};
 		std::vector<SnnIoEntry> outputs = {
 			{"Acelerador/Freno", TextFormat("%.2f", pendingThrottle)},
-			{"Direccion", TextFormat("%.2f", pendingSteering)},
+			{"Dirección", TextFormat("%.2f", pendingSteering)},
 		};
 		net.setIoDisplay(inputs, outputs, -1);
 	}
@@ -244,53 +245,54 @@ static bool activated(Button b, Vector2 mousePosition, bool gamepadConfirm) {
 int main() {
 	g_uiScale = SCREEN_WIDTH / 1680.0f;
 
-	InitWindow(SCREEN_WIDTH,SCREEN_HEIGHT, "NeuroGame");
-	SetWindowPosition(SCREEN_WIDTH, 0);
+	// Borderless window sized to exactly fill a monitor, rather than FLAG_FULLSCREEN_MODE:
+	// that flag hands sizing to GLFW's "closest video mode on the primary monitor" logic,
+	// which on a multi-monitor/scaled setup can pick the wrong monitor or a mismatched
+	// resolution entirely (observed firsthand: it shrank the window instead of filling the
+	// screen). Undecorated + positioned at the target monitor's origin has no such guesswork.
+	SetConfigFlags(FLAG_WINDOW_UNDECORATED);
+	InitWindow(SCREEN_WIDTH, SCREEN_HEIGHT, "NeuroGame");
+	int targetMonitor = 0;
+	for (int m = 0; m < GetMonitorCount(); ++m) {
+		if (GetMonitorWidth(m) == SCREEN_WIDTH && GetMonitorHeight(m) == SCREEN_HEIGHT) { targetMonitor = m; break; }
+	}
+	Vector2 targetMonitorPos = GetMonitorPosition(targetMonitor);
+	SetWindowPosition(static_cast<int>(targetMonitorPos.x), static_cast<int>(targetMonitorPos.y));
 	SetTargetFPS(60);
 
-	// raylib/GLFW only reads gamepad axes/buttons through glfwGetGamepadState(), which
-	// requires the controller's exact USB VID:PID to be present in GLFW's built-in
-	// SDL_GameControllerDB snapshot -- otherwise IsGamepadAvailable() is true but every
-	// axis/button silently reads 0. The GameSir Nova Lite's 2.4GHz dongle (and its wired
-	// USB-C mode, which enumerates identically) shows up as a generic "Zikway HID gamepad"
-	// (bus/vendor/product/version 0003:3537:1041:0111), which isn't in that snapshot. This
-	// mapping was reverse-engineered by reading raw events off /dev/input/js0 while pressing
-	// one physical control at a time (RIGHT trigger alone -> raw axis 4, LEFT trigger alone
-	// -> raw axis 5; the two face buttons chosen for A/B -> raw buttons 0/1). The right stick
-	// is still unmapped since nothing reads it.
-	//
-	// The d-pad needed a different treatment than /dev/input/js0 suggests: that legacy
-	// "joydev" API flattens a hat switch into two synthetic extra axes (6 and 7 here), but
-	// GLFW's actual Linux backend reads the modern evdev API directly and keeps a hat as a
-	// genuine hat, separate from axisCount -- confirmed via
-	// /sys/class/input/eventN/device/capabilities/abs, which shows this device has only 6
-	// real axes (0-5, the ones already mapped above) plus one hat. Referencing "a6"/"a7" (out
-	// of range) made GLFW discard this *entire* mapping as invalid, not just the d-pad --
-	// hence "dpup:h0.1" etc. below (hat 0, SDL bitmask: 1=up, 2=right, 4=down, 8=left) instead.
-	// A different GameSir unit/firmware revision (or a different controller entirely) will
-	// need all of this re-derived the same way.
-	SetGamepadMappings(
-		"03000000373500004110000011010000,GameSir Nova Lite (dongle),"
-		"platform:Linux,leftx:a0,lefty:a1,lefttrigger:a5,righttrigger:a4,"
-		"a:b0,b:b1,dpup:h0.1,dpright:h0.2,dpdown:h0.4,dpleft:h0.8,"
-	);
+	// See gamepad_setup.cpp for why this specific controller needs a hand-derived mapping,
+	// and why it must be called (once, right here) in every binary that reads gamepad input.
+	SetupGameSirGamepadMapping();
 
 	Menu menu = Menu(SCREEN_WIDTH, SCREEN_HEIGHT);
 	bool quitRequested = false;
 
+	// Every panel below used to reserve a flat "SCREEN_HEIGHT - 200" (120 top margin + 80
+	// bottom margin); the 80px bottom margin no longer clears DrawSponsorLogos/
+	// DrawFondecytCredit now that both got bigger, so it's now derived from
+	// BrandingFooterHeight() (plus a little breathing room) instead of that old fixed 80.
+	const float footerReserve = BrandingFooterHeight() + 20.0f;
+	const float panelHeight = SCREEN_HEIGHT - 120.0f - footerReserve;
+
 	// Network view layout: SNN on the left, task environment on the right.
-	const Rectangle networkPanelBounds = { 80, 120, (SCREEN_WIDTH - 160 - 40) / 2.0f, SCREEN_HEIGHT - 200 };
+	const Rectangle networkPanelBounds = { 80, 120, (SCREEN_WIDTH - 160 - 40) / 2.0f, panelHeight };
 	const Rectangle envPanelBounds = {
 		networkPanelBounds.x + networkPanelBounds.width + 40, 120,
-		networkPanelBounds.width, SCREEN_HEIGHT - 200
+		networkPanelBounds.width, panelHeight
 	};
 	// VS AI (Racing Car): no network shown, so the track gets the full width.
-	const Rectangle racePanelBounds = { 80, 120, SCREEN_WIDTH - 160.0f, SCREEN_HEIGHT - 200.0f };
+	const Rectangle racePanelBounds = { 80, 120, SCREEN_WIDTH - 160.0f, panelHeight };
 	const Color HUMAN_CAR_COLOR = Color{220, 60, 60, 255};
 	const Color AI_CAR_COLOR = Color{60, 110, 220, 255};
 	// VS AI (Acrobot / Mountain Car): human's env on the left, AI's on the right, shorter
-	// than the racing panel to leave room for the Izquierda/Derecha buttons at the bottom.
-	const Rectangle discreteLeftPanelBounds = { 80, 120, (SCREEN_WIDTH - 160 - 40) / 2.0f, SCREEN_HEIGHT - 200 - 140.0f };
+	// than the racing panel to leave room for the Izquierda/Derecha buttons at the bottom --
+	// derived from those buttons' actual (already footer-aware) position rather than a fixed
+	// guess, so the two can't drift out of sync again if either one's sizing changes.
+	const float discreteBottomGap = 20.0f;
+	const Rectangle discreteLeftPanelBounds = {
+		80, 120, (SCREEN_WIDTH - 160 - 40) / 2.0f,
+		menu.getLeftActionButton().getButton().y - discreteBottomGap - 120.0f
+	};
 	const Rectangle discreteRightPanelBounds = {
 		discreteLeftPanelBounds.x + discreteLeftPanelBounds.width + 40, 120,
 		discreteLeftPanelBounds.width, discreteLeftPanelBounds.height
@@ -298,7 +300,7 @@ int main() {
 	// VS AI (Iris): network on the left, flower on the right, shorter still than the
 	// Acrobot/Mountain Car panels to leave room for the guess buttons *and* the
 	// reveal/prompt text line stacked below them (see IRIS_BUTTONS_ROW_Y/IRIS_TEXT_ROW_Y).
-	const Rectangle irisLeftPanelBounds = { 80, 120, (SCREEN_WIDTH - 160 - 40) / 2.0f, SCREEN_HEIGHT - 200 - 220.0f };
+	const Rectangle irisLeftPanelBounds = { 80, 120, (SCREEN_WIDTH - 160 - 40) / 2.0f, panelHeight - 220.0f };
 	const Rectangle irisRightPanelBounds = {
 		irisLeftPanelBounds.x + irisLeftPanelBounds.width + 40, 120,
 		irisLeftPanelBounds.width, irisLeftPanelBounds.height
@@ -795,7 +797,7 @@ int main() {
 				DrawText(TextFormat("Pasos: %d", carEnv.stepCount()),
 					static_cast<int>(envPanelBounds.x), static_cast<int>(envPanelBounds.y + envPanelBounds.height - 20), FS(18), DARKGRAY);
 			} else {
-				const char* placeholder = "Entorno aun no implementado para esta tarea";
+				const char* placeholder = "Entorno aún no implementado para esta tarea";
 				int placeholderWidth = MeasureText(placeholder, FS(20));
 				DrawText(placeholder,
 					static_cast<int>(envPanelBounds.x + envPanelBounds.width / 2.0f - placeholderWidth / 2.0f),
@@ -825,20 +827,20 @@ int main() {
 			double acrobotProgress = raceDiscreteAccumulatorMs / realStepMsForTask(0);
 			humanAcrobotEnv.draw(discreteLeftPanelBounds, acrobotProgress);
 			aiAcrobotEnv.draw(discreteRightPanelBounds, acrobotProgress);
-			DrawText("Tu", static_cast<int>(discreteLeftPanelBounds.x), 95, FS(20), DARKGRAY);
+			DrawText("Tú", static_cast<int>(discreteLeftPanelBounds.x), 95, FS(20), DARKGRAY);
 			DrawText("IA", static_cast<int>(discreteRightPanelBounds.x), 95, FS(20), DARKGRAY);
 			float acrobotDividerX = discreteLeftPanelBounds.x + discreteLeftPanelBounds.width + 20;
 			DrawLineEx({ acrobotDividerX, discreteLeftPanelBounds.y }, { acrobotDividerX, discreteLeftPanelBounds.y + discreteLeftPanelBounds.height }, 1.0f, LIGHTGRAY);
-			DrawText("Manten presionado Izquierda o Derecha para aplicar torque",
+			DrawText("Mantén presionado Izquierda o Derecha para aplicar torque",
 				static_cast<int>(discreteLeftPanelBounds.x), static_cast<int>(discreteLeftPanelBounds.y + discreteLeftPanelBounds.height + 12), FS(18), GRAY);
 		} else if (menu.getStatus() == VS_AI_MOUNTAIN_CAR) {
 			humanMountainCarEnv.draw(discreteLeftPanelBounds);
 			aiMountainCarEnv.draw(discreteRightPanelBounds);
-			DrawText("Tu", static_cast<int>(discreteLeftPanelBounds.x), 95, FS(20), DARKGRAY);
+			DrawText("Tú", static_cast<int>(discreteLeftPanelBounds.x), 95, FS(20), DARKGRAY);
 			DrawText("IA", static_cast<int>(discreteRightPanelBounds.x), 95, FS(20), DARKGRAY);
 			float mcDividerX = discreteLeftPanelBounds.x + discreteLeftPanelBounds.width + 20;
 			DrawLineEx({ mcDividerX, discreteLeftPanelBounds.y }, { mcDividerX, discreteLeftPanelBounds.y + discreteLeftPanelBounds.height }, 1.0f, LIGHTGRAY);
-			DrawText("Manten presionado Izquierda o Derecha para empujar el auto",
+			DrawText("Mantén presionado Izquierda o Derecha para empujar el auto",
 				static_cast<int>(discreteLeftPanelBounds.x), static_cast<int>(discreteLeftPanelBounds.y + discreteLeftPanelBounds.height + 12), FS(18), GRAY);
 		} else if (menu.getStatus() == VS_AI_IRIS) {
 			// The AI's decoded species stays hidden (no highlighted output/legend entry)
@@ -868,7 +870,7 @@ int main() {
 			float dividerX = irisLeftPanelBounds.x + irisLeftPanelBounds.width + 20;
 			DrawLineEx({ dividerX, irisLeftPanelBounds.y }, { dividerX, irisLeftPanelBounds.y + irisLeftPanelBounds.height }, 1.0f, LIGHTGRAY);
 
-			std::string scoreText = TextFormat("Tu: %d   IA: %d   Racha: %d", irisHumanScore, irisAiScore, irisStreak);
+			std::string scoreText = TextFormat("Tú: %d   IA: %d   Racha: %d", irisHumanScore, irisAiScore, irisStreak);
 			int scoreWidth = MeasureText(scoreText.c_str(), FS(22));
 			DrawText(scoreText.c_str(), SCREEN_WIDTH / 2 - scoreWidth / 2, 60, FS(22), DARKGRAY);
 
@@ -883,7 +885,7 @@ int main() {
 				// holds at irisHumanDecisionTimeSec while the AI's animation finishes.
 				double elapsedSec = (irisHumanGuess < 0) ? (GetTime() - irisRoundStartTime) : irisHumanDecisionTimeSec;
 				std::string prompt = (irisHumanGuess < 0)
-					? TextFormat("Elegi una especie mientras la red decide... (%.1fs)", elapsedSec)
+					? TextFormat("Elegí una especie mientras la red decide... (%.1fs)", elapsedSec)
 					: TextFormat("Elegiste en %.1fs. Esperando a la IA...", elapsedSec);
 				int promptWidth = MeasureText(prompt.c_str(), FS(18));
 				DrawText(prompt.c_str(), SCREEN_WIDTH / 2 - promptWidth / 2, static_cast<int>(IRIS_TEXT_ROW_Y), FS(18), GRAY);
@@ -906,7 +908,7 @@ int main() {
 			DrawText(title.c_str(), SCREEN_WIDTH / 2 - titleWidth / 2, 80, FS(24), DARKGRAY);
 
 			if (modelButtons.empty()) {
-				const char* empty = "No hay modelos guardados para esta tarea todavia.";
+				const char* empty = "No hay modelos guardados para esta tarea todavía.";
 				int emptyWidth = MeasureText(empty, FS(20));
 				DrawText(empty, SCREEN_WIDTH / 2 - emptyWidth / 2, SCREEN_HEIGHT / 2, FS(20), GRAY);
 			}
