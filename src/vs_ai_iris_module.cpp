@@ -125,7 +125,7 @@ void VsAiIrisModule::draw(Vector2 mouse) const {
 
         double elapsedSec = (humanGuess_ < 0) ? (GetTime() - roundStartTime_) : humanDecisionTimeSec_;
         std::string prompt = (humanGuess_ < 0)
-            ? TextFormat("Elegí una especie mientras la red decide... (%.1fs)", elapsedSec)
+            ? TextFormat("Elige una especie mientras la red decide... (%.1fs)", elapsedSec)
             : TextFormat("Elegiste en %.1fs. Esperando a la IA...", elapsedSec);
         int promptWidth = MeasureText(prompt.c_str(), FS(14));
         DrawText(prompt.c_str(), static_cast<int>(bounds_.x + bounds_.width / 2.0f - promptWidth / 2.0f),

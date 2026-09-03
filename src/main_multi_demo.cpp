@@ -18,6 +18,7 @@
 #include "../include/vs_ai_discrete_module.hpp"
 #include "../include/vs_ai_iris_module.hpp"
 #include "../include/vs_ai_racing_car_module.hpp"
+#include "../include/wann_evolution_module.hpp"
 
 // Combines 2 or 3 modules into one window at once, stacked vertically -- each module keeps
 // the window's full width, only its share of the height changes (see include/demo_module.hpp
@@ -25,9 +26,9 @@
 // without per-panel rescaling). A small selector screen picks which ones.
 //
 // Two selection groups, with different rules:
-//   Regular (indices 0-7): the 5 standalone demos plus "Evaluar red" for each of the 3
-//     tasks. Freely multi-selectable, 2-3 at a time, like before.
-//   VS IA (indices 8-11): at most ONE of these four. Choosing one caps the total selection
+//   Regular (indices 0-8): the 5 standalone demos, "Evaluar red" for each of the 3 tasks,
+//     and the live WANN evolution reel. Freely multi-selectable, 2-3 at a time, like before.
+//   VS IA (indices 9-12): at most ONE of these four. Choosing one caps the total selection
 //     at exactly 2 (itself + exactly one regular demo) and always renders on top -- VS IA's
 //     human-vs-AI panels are already denser (two sub-panels + controls) than the other demos,
 //     so pairing it with more than one neighbor would cramp everything.
@@ -38,8 +39,8 @@ namespace {
     constexpr int SCREEN_WIDTH = 2160;
     constexpr int SCREEN_HEIGHT = 3840;
 
-    constexpr int REGULAR_COUNT = 8;
-    constexpr int VS_AI_START = 8;
+    constexpr int REGULAR_COUNT = 9;
+    constexpr int VS_AI_START = 9;
     constexpr int VS_AI_COUNT = 4;
     constexpr int DEMO_COUNT = REGULAR_COUNT + VS_AI_COUNT;
 
@@ -52,6 +53,7 @@ namespace {
         "Evaluar red: Acrobot",
         "Evaluar red: Mountain Car",
         "Evaluar red: Racing Car",
+        "Neuroevolucion WANN (reel)",
         "VS IA: Acrobot",
         "VS IA: Mountain Car",
         "VS IA: Racing Car",
@@ -68,10 +70,11 @@ namespace {
             case 5: return std::make_unique<NetworkViewModule>(0);
             case 6: return std::make_unique<NetworkViewModule>(1);
             case 7: return std::make_unique<NetworkViewModule>(2);
-            case 8: return std::make_unique<VsAiDiscreteModule>(0);
-            case 9: return std::make_unique<VsAiDiscreteModule>(1);
-            case 10: return std::make_unique<VsAiRacingCarModule>();
-            case 11: return std::make_unique<VsAiIrisModule>();
+            case 8: return std::make_unique<WannEvolutionModule>();
+            case 9: return std::make_unique<VsAiDiscreteModule>(0);
+            case 10: return std::make_unique<VsAiDiscreteModule>(1);
+            case 11: return std::make_unique<VsAiRacingCarModule>();
+            case 12: return std::make_unique<VsAiIrisModule>();
             default: return nullptr;
         }
     }
@@ -117,6 +120,7 @@ int main() {
         Button{{0,0,1,1}, ""}, Button{{0,0,1,1}, ""}, Button{{0,0,1,1}, ""}, Button{{0,0,1,1}, ""},
         Button{{0,0,1,1}, ""}, Button{{0,0,1,1}, ""}, Button{{0,0,1,1}, ""}, Button{{0,0,1,1}, ""},
         Button{{0,0,1,1}, ""}, Button{{0,0,1,1}, ""}, Button{{0,0,1,1}, ""}, Button{{0,0,1,1}, ""},
+        Button{{0,0,1,1}, ""},
     };
     std::array<bool, DEMO_COUNT> selected{};
     for (int i = 0; i < DEMO_COUNT; ++i) {
@@ -190,7 +194,7 @@ int main() {
         ClearBackground(RAYWHITE);
 
         if (screen == Screen::SELECTOR) {
-            const char* title = "Elegí 2 o 3 demos para mostrar juntas";
+            const char* title = "Elige 2 o 3 demos para mostrar juntas";
             int titleWidth = MeasureText(title, static_cast<int>(30 * g_uiScale));
             DrawText(title, SCREEN_WIDTH / 2 - titleWidth / 2, static_cast<int>(togglesTop - 80.0f), static_cast<int>(30 * g_uiScale), DARKGRAY);
 

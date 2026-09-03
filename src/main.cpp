@@ -885,7 +885,7 @@ int main() {
 				// holds at irisHumanDecisionTimeSec while the AI's animation finishes.
 				double elapsedSec = (irisHumanGuess < 0) ? (GetTime() - irisRoundStartTime) : irisHumanDecisionTimeSec;
 				std::string prompt = (irisHumanGuess < 0)
-					? TextFormat("Elegí una especie mientras la red decide... (%.1fs)", elapsedSec)
+					? TextFormat("Elige una especie mientras la red decide... (%.1fs)", elapsedSec)
 					: TextFormat("Elegiste en %.1fs. Esperando a la IA...", elapsedSec);
 				int promptWidth = MeasureText(prompt.c_str(), FS(18));
 				DrawText(prompt.c_str(), SCREEN_WIDTH / 2 - promptWidth / 2, static_cast<int>(IRIS_TEXT_ROW_Y), FS(18), GRAY);
